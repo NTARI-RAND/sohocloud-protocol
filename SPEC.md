@@ -73,27 +73,66 @@ stable across platforms, Go versions, and languages.
 
 Primitives, in the exact order fields are listed for each message in §4:
 
+- **unsigned LEB128 varint** — the length/count primitive used by `string`,
+  `bytes`, and `repeated`. It MUST be encoded as follows, language-independently:
+  take the unsigned value; emit 7 bits per byte, least-significant group first
+  (little-endian groups); set the high bit (`0x80`) of every byte EXCEPT the last
+  to mark continuation; the last byte has its high bit clear. The value `0`
+  encodes as the single byte `0x00`. This is exactly the encoding produced by
+  Go's `encoding/binary.PutUvarint`; the Go symbol is a cross-check, not the
+  definition. (Worked: `300` = `0b100101100` → low 7 bits `0101100` with
+  continuation → `0xAC`, high bits `0000010` last → `0x02`, giving `AC 02`.)
 - **domain tag** — every message's canonical bytes begin with a distinct
-  domain-tag string (see §4), encoded as a *string* per below. Distinct tags make
-  a signature over one message type non-transferable to another.
-- **string** — unsigned LEB128 varint byte-length, then the raw UTF-8 bytes.
+  domain-tag string (see §4). The domain tag MUST be encoded with the **string**
+  rule below — i.e. an unsigned LEB128 varint of its UTF-8 byte length followed by
+  its UTF-8 bytes — exactly like any other string field, with no null terminator
+  and no special casing. Distinct tags make a signature over one message type
+  non-transferable to another.
+- **string** — unsigned LEB128 varint byte-length, then the raw UTF-8 bytes. An
+  empty string MUST encode as the single byte `0x00` (a zero length and no
+  payload).
 - **bytes** — unsigned LEB128 varint byte-length, then the raw bytes. (The
   `Signature` field is never encoded; it is excluded.)
-- **bool** — a single byte, `0x00` or `0x01`.
-- **int64 / uint64** — fixed 8 bytes, big-endian. `int64` is encoded as its
-  two's-complement `uint64`.
+- **bool** — a single byte, exactly `0x00` (false) or `0x01` (true); no other
+  byte value is valid.
+- **int64 / uint64** — fixed 8 bytes, big-endian (most-significant byte first).
+  `int64` MUST be encoded as its two's-complement `uint64` reinterpretation: add
+  2⁶⁴ to a negative value, then emit the 8 big-endian bytes. Thus `-1` →
+  `ff ff ff ff ff ff ff ff`, `-2` → `ff ff ff ff ff ff ff fe`, and the minimum
+  `int64` (`-9223372036854775808`) → `80 00 00 00 00 00 00 00`. No sign-magnitude,
+  no zigzag, no variable length.
 - **time** — the instant as `int64` UTC Unix **nanoseconds** (per the int64 rule
-  above). Location and monotonic-clock components are dropped. This survives a
-  JSON transport round-trip and is time-zone independent.
-- **repeated field** — an unsigned LEB128 varint *count*, then each element's
-  fields encoded in order, inline.
-
-"Unsigned LEB128 varint" is the encoding produced by Go's
-`encoding/binary.PutUvarint`.
+  above, big-endian, 8 bytes). Location and monotonic-clock components are
+  dropped. Nanosecond precision is preserved exactly; the value MUST NOT be
+  truncated to micro- or milliseconds. This survives a JSON transport round-trip
+  and is time-zone independent. An instant outside the representable range of
+  `int64` UTC Unix nanoseconds (approximately the years 1678–2262) is out of scope
+  for v0 and MUST be treated as an encoding error rather than wrapped or clamped.
+- **repeated field** — an unsigned LEB128 varint *count* (the number of elements)
+  encoded FIRST, then each element's fields encoded in order, fully inline, using
+  the normal primitive rules above. A repeated element that is itself a string is
+  therefore length-prefixed like any other string; nested struct fields are
+  emitted in the order given for that element in §4. There is no separator between
+  elements and no terminator after the last one. A count of `0` is the single
+  byte `0x00` followed by no elements.
 
 A verifier recomputes the canonical bytes from the received fields and checks the
 ed25519 signature against the resolved public key. A verifier MUST reject a
 signature whose length is not `ed25519.SignatureSize` (64) before verifying.
+
+The canonical bytes of a message are **exactly** the concatenation of the domain
+tag followed by every field listed in that message's `Order:` clause in §4, in
+that order, each encoded by its primitive rule above. There is no outer framing:
+no leading version byte, no total-length prefix wrapping the message, and no
+trailing bytes after the last field. The `Order:` list in §4 is exhaustive and
+authoritative — the message's **signature field(s)** are the ONLY fields
+excluded, and no field exists in the canonical bytes that is not named there.
+For the six core messages of §4 that single excluded field is `Signature`. The
+Layer-C operator messages of §11 carry **two** signatures (`Sig0` and `Sig1`)
+over the same canonical bytes; both are excluded exactly as `Signature` is here,
+and, like `Signature`, neither appears in an `Order:` clause. A verifier
+therefore never encodes any signature field into the bytes it recomputes,
+whether the message has one signature or two.
 
 ---
 
@@ -101,6 +140,15 @@ signature whose length is not `ed25519.SignatureSize` (64) before verifying.
 
 For each message: its domain tag, its fields in canonical order, and who signs
 it. All timestamps follow the `time` rule in §3.
+
+The `Order:` clause below is the SOLE authority for canonical field order,
+including the order of nested struct fields (e.g. `Capacity.VCPUs` before
+`Capacity.MemMB`, and each printer as `Kind` then `Model`). An implementer MUST
+encode fields in the `Order:` sequence and MUST NOT infer order from any other
+source. In particular, the sample `testdata/vectors.json` (§10) lists each
+message's `fields` in **alphabetical key order for readability, which is NOT the
+canonical encoding order** — following the JSON key order would produce wrong
+bytes and invalid signatures.
 
 ### 4.1 CapabilityListing — signed by the NODE
 Domain tag: `sohocloud/listing/v0`
@@ -265,3 +313,245 @@ Honesty about unsolved gaps is the method, not an embarrassment.
 `v0` is unstable. The domain tags embed `v0`; a breaking change to a message's
 canonical fields bumps its tag. Consumers MUST treat an unknown domain tag as an
 unverifiable message.
+
+---
+
+## 10. Test vectors
+
+`testdata/vectors.json` is the **normative conformance fixture** for this spec.
+An independent implementation is conformant with respect to canonical encoding
+and signing if and only if it reproduces, byte-for-byte, every value in that
+file from the same inputs. The fixture is generated by the reference Go encoders
+and is cross-checked by an independent stdlib-only reproduction; a conforming
+foreign implementation MUST match it exactly. Where prose in §3/§4 and the
+fixture ever disagree, that is a spec defect to be fixed, not a license to
+diverge — but the fixture is the executable statement of §3/§4.
+
+All hex in the fixture is lowercase. It is self-describing: a top-level `note`
+and an `encoding` block restate the §3 primitive rules for a reader who opens the
+JSON first.
+
+### 10.1 Structure
+
+- **`primitives`** — isolated encodings of each §3 primitive, so an implementer
+  can validate the encoder bottom-up before assembling messages. Each entry has a
+  `kind` (`uvarint`, `int64`, `uint64`, `bool`, `string`, `time`), a
+  human-readable `input`, and the expected `bytes_hex`. These cover the boundary
+  cases that pin the format: varint values across each continuation-byte
+  threshold (`0, 1, 127, 128, 255, 256, 300, 16384, 1073741824`); `int64`
+  including `-1`, `-2`, `MaxInt64`, and `MinInt64`; `uint64` including
+  `MaxUint64`; both bools; the empty string and a multibyte UTF-8 string; and
+  `time` at the Unix epoch and at a fixed nanosecond instant.
+
+- **`messages`** — one entry per signed message type (all six of §4). Each entry
+  records: `name`, `domain_tag`, `signer` (`node` or `coordinator`), the 32-byte
+  ed25519 `seed_hex` and the derived `public_key_hex`, the message `fields`, the
+  `canonical_bytes_hex` (the output of `CanonicalBytes()`, `Signature` excluded),
+  and the `signature_hex` (ed25519 over exactly those canonical bytes).
+
+- **`operator_messages`** — one entry per Layer-C operator message type (all
+  three of §11). Because operator messages are 2-of-7, each entry differs from a
+  core `messages` entry: `signer` is always `operator`; a `keys` array lists all
+  seven registered public keys (`index`, `seed_hex`, `public_key_hex`, `algo` —
+  the seeds are present ONLY so the fixture is self-contained and reproducible,
+  never because the network holds private keys); `idx0`/`idx1` are the two
+  signing indices; and instead of one `signature_hex` there are `sig0_hex` and
+  `sig1_hex`, BOTH taken over the SAME `canonical_bytes_hex`. A conformant
+  implementation reproduces `canonical_bytes_hex` from the §11 field order and
+  verifies both signatures at their indices.
+
+  > **Field order trap.** Each message's `fields` object lists keys in
+  > **alphabetical order for readability, NOT canonical order.** Canonical order
+  > comes ONLY from the `Order:` clause of that message in §4. An implementer who
+  > encodes fields in the JSON key order will produce wrong bytes and signatures
+  > that do not verify.
+
+### 10.2 How to use the fixture
+
+1. Reproduce every `primitives[].bytes_hex` from its `input` using §3.
+2. For each message, derive the keypair from `seed_hex` (ed25519 from a 32-byte
+   seed is deterministic), confirm it yields `public_key_hex`, encode the fields
+   in §4 `Order:` and confirm you get `canonical_bytes_hex`, then verify
+   `signature_hex` against `public_key_hex` over your independently derived bytes.
+   Signature verification over your OWN bytes is the strongest cross-check: it can
+   only pass if your bytes are identical to the reference generator's.
+
+The reference test lives in `vectors/vectors_test.go`. It regenerates every
+vector from the current code and asserts byte-for-byte equality with the
+committed JSON, so a drift between code and fixture fails the build; it also
+re-parses the committed file and verifies every signature. Regenerate
+intentionally with `go test ./vectors -update` (or the
+`SOHOCLOUD_UPDATE_VECTORS` env var). All vectors use fixed byte-fill seeds and
+hardcoded timestamps — there is no `crypto/rand` and no `time.Now()`, so the
+output is fully deterministic.
+
+### 10.3 Worked example: a `Heartbeat`, byte by byte
+
+This is the `Heartbeat` vector (`§4.2`) decoded field by field, so a
+reimplementer can trace the whole encoding start to finish. Inputs:
+`NodeID = "node-alpha"`, `SentAt = ` Unix nanoseconds `1700000050500000000`,
+`Seq = 43`.
+
+Canonical bytes (`canonical_bytes_hex`):
+
+```
+16 736f686f636c6f75642f6865617274626561742f7630 0a 6e6f64652d616c706861 17979d09f832d900 000000000000002b
+```
+
+Decoded left to right:
+
+| Bytes | Primitive | Meaning |
+|-------|-----------|---------|
+| `16` | uvarint length | Domain-tag length = `0x16` = **22** bytes. |
+| `73 6f 68 6f 63 6c 6f 75 64 2f 68 65 61 72 74 62 65 61 74 2f 76 30` | UTF-8 bytes | The domain tag `sohocloud/heartbeat/v0` (22 bytes). Together with the length prefix, these two rows are the `string` encoding of the domain tag (§3). |
+| `0a` | uvarint length | `NodeID` length = `0x0a` = **10** bytes. |
+| `6e 6f 64 65 2d 61 6c 70 68 61` | UTF-8 bytes | `NodeID` = `node-alpha` (10 bytes). |
+| `17 97 9d 09 f8 32 d9 00` | int64, big-endian | `SentAt` as UTC Unix nanoseconds. `0x17979d09f832d900` = `1700000050500000000`. This is the `time` rule (§3): the instant reduced to an `int64` and emitted as 8 big-endian bytes. |
+| `00 00 00 00 00 00 00 2b` | uint64, big-endian | `Seq` = `0x2b` = **43**. Fixed 8 bytes, no varint. |
+
+The concatenation of exactly these six groups — domain tag (length + bytes),
+`NodeID` (length + bytes), `SentAt`, `Seq` — is the complete canonical byte
+string. There is no framing before the domain tag and no bytes after `Seq`. The
+ed25519 signature (`signature_hex`) is taken over precisely this string; the
+`Signature` field itself is never part of it.
+
+Note how the field order here (`NodeID`, `SentAt`, `Seq`) follows §4.2 `Order:`,
+which is also — by coincidence for this small message — how a reader would list
+them; for larger messages such as `CapabilityListing`, the §4 `Order:` and the
+alphabetical `fields` keys in `vectors.json` differ, and only the §4 order is
+canonical.
+
+---
+
+## 11. Operator identity (Layer C)
+
+§1–§10 govern **node** and **coordinator** messages. This section adds a third,
+orthogonal identity: the **operator** — a frontend (e.g. Cloudy) that terminates
+member and node identity inside itself and presents a single rotating credential
+to a coordinator. It is deliberately separate from node workload identity (§2):
+the six core coordination messages (§4) are UNCHANGED and are NOT signed with an
+operator credential.
+
+An operator holds **seven** Ed25519 keypairs (indices `0..6`) and signs each
+message with **two distinct** indices (a **2-of-7** discipline). The network
+registers only the seven **public** keys per operator; **no operator private key
+is ever held by the network**, and every verify path below takes public keys
+only.
+
+- **2-of-7 is anti-substitution / rotation hygiene, NOT threshold security.** If
+  all seven private keys live in one process, a single host compromise yields all
+  seven. 2-of-7 is not relied on to survive single-key compromise unless custody
+  is split across trust domains. This is stated so no reader over-trusts it.
+- **Algorithm binding.** Every operator message binds an algorithm string `Algo`
+  into its canonical bytes. `v0` permits exactly `ed25519`. A verifier MUST
+  reject a message whose `Algo` is unknown, and MUST reject a message whose
+  `Algo` does not equal the registered `algo` of the key at each signing index.
+  An operator's active key set MUST NOT mix algorithms. The signature length gate
+  is per-algorithm (`ed25519` = 64 bytes), not a hardcoded constant, so the
+  planned whole-set atomic rotation to a post-quantum algorithm (a NEW domain
+  tag, e.g. `sohocloud/operator/v1-mldsa`) reuses the same rule. A signature is
+  non-transferable across algorithms.
+- **Migration seam.** The reference implementation routes operator signing and
+  verification through a `Signer`/`Verifier` interface, implemented with stdlib
+  Ed25519 today, precisely so the algorithm can be swapped by adding a `v1`
+  domain tag later without touching the six core messages. This is an
+  implementation note; the wire contract is the field orders and tags below.
+
+**Encoding of operator fields (no special casing).** Every field in the §11
+`Order:` clauses is encoded by its ordinary §3 primitive rule; §11 introduces no
+new or fixed-width types. In particular:
+
+- `OperatorID` and `Algo` are ordinary §3 **strings** — an unsigned LEB128
+  varint of the UTF-8 byte length followed by the UTF-8 bytes. `Algo` is NOT a
+  bare token or a fixed-width enum tag despite `v0` permitting exactly the one
+  value `ed25519`; it MUST carry its length prefix like any other string (e.g.
+  `ed25519` encodes as `07 65 64 32 35 35 31 39`). `Nonce`, `NewPublicKey`, and
+  `Challenge` are ordinary §3 **bytes** (LEB128 length prefix then raw bytes).
+- `Idx0`, `Idx1`, and `KeyIndex` are each encoded as a **fixed 8-byte
+  big-endian `uint64`** per the §3 `uint64` rule, exactly like `Seq` — NOT as a
+  varint and NOT as a single byte — even though their values lie in the small
+  range `0..6`. An implementer who encodes an index as a varint or one byte
+  produces wrong bytes and an invalid signature. (Example: index `2` encodes as
+  `00 00 00 00 00 00 00 02`.)
+- The two signatures `Sig0` and `Sig1` are **excluded** from the canonical bytes
+  of every §11 message, exactly as `Signature` is for the §4 messages (§3). They
+  are the only excluded fields and, like `Signature`, appear in no `Order:`
+  clause below. There is no third signature field. `Idx0`/`Idx1` (which name the
+  signing keys) ARE inside the signed bytes; the signature *bytes* are not.
+
+### 11.0 Verification requirements (all operator messages)
+
+A verifier MUST, before honoring any operator message:
+
+1. Reject if the message's nonce is absent or shorter than **16 bytes** (where the
+   message has a nonce). An empty nonce MUST NEVER be treated as "skip the replay
+   cache."
+2. Reject if `Algo` is not a supported algorithm for this version.
+3. Reject if the two signing indices `Idx0` and `Idx1` are equal.
+4. Reject if either index is outside `0..6`.
+5. Reject if no active registered key exists at either index, or if either
+   registered key's `algo` does not equal the message's `Algo`.
+5a. Reject if the registered public keys at `Idx0` and `Idx1` are byte-identical,
+   even though the indices differ. The seven registered public keys of an
+   operator MUST be pairwise distinct; a registration or rotation MUST NOT
+   install a public key that already exists at another index (see §11.2). This
+   is enforced so the 2-of-7 anti-substitution property cannot silently degrade
+   to 1-of-1: if two indices held the same key, a single private key could
+   produce both signatures. This check is on the *keys*, not merely the indices
+   (rule 3), and is required in addition to it.
+6. Reject if either signature's length is not the expected length for `Algo`.
+7. Recompute the canonical bytes and reject unless BOTH signatures verify at
+   their indices over exactly those bytes.
+
+Anti-replay (a durable, fail-closed sliding-window `Seq` + nonce set scoped per
+`(operator, coordinator)`) is a coordinator-side obligation layered ON TOP of the
+above; it is not part of the canonical bytes and is out of scope for this
+encoding spec.
+
+### 11.1 OperatorTransmission — signed by the OPERATOR (2 of 7)
+Domain tag: `sohocloud/operator/v0`
+
+Order: `OperatorID` (string), `Ts` (int64 UTC Unix nanoseconds — the raw `int64`,
+NOT re-derived through a `time.Time`, so the range-checked value is exactly the
+signed value), `Nonce` (bytes, `len >= 16`), `Seq` (uint64), `Algo` (string),
+`Idx0` (uint64), `Idx1` (uint64).
+
+The two signatures `Sig0` (by the key at `Idx0`) and `Sig1` (by the key at
+`Idx1`) are taken over these canonical bytes and are EXCLUDED from them, exactly
+as `Signature` is elsewhere. `Ts`, `Nonce`, `Seq`, both indices, and `Algo` are
+all inside the signed bytes.
+
+### 11.2 OperatorRotation — signed by the OPERATOR (2 of 7)
+Domain tag: `sohocloud/operator-rotate/v0`
+
+Order: `OperatorID` (string), `KeyIndex` (uint64 — the index whose key is being
+replaced), `NewPublicKey` (bytes — the operator-generated replacement public
+key), `Algo` (string), `Ts` (int64 UTC Unix nanoseconds), `Nonce` (bytes,
+`len >= 16`), `Seq` (uint64), `Idx0` (uint64), `Idx1` (uint64).
+
+This authorizes swapping in a new public key. The operator (never the network)
+generates the new keypair. The new public key is INSIDE the signed bytes so that
+neither a man-in-the-middle of the out-of-band registration nor a compromised
+admin channel can inject key material: a coordinator MUST verify this message
+(with two CURRENT keys, `Idx0`/`Idx1`) before recording the new key at
+`KeyIndex`. A verifier MUST additionally reject a `NewPublicKey` whose length is
+wrong for `Algo`. A verifier MUST also reject a `NewPublicKey` that is
+byte-identical to a key already registered at a DIFFERENT index (it would
+violate the pairwise-distinct-keys requirement of §11.0 rule 5a and set up the
+2-of-7 → 1-of-1 degradation); re-registering the same key at its OWN `KeyIndex`
+(a no-op refresh) is permitted. To preserve the no-mixed-algorithms invariant, a
+verifier SHOULD also reject a rotation whose `Algo` differs from that of the
+other registered keys.
+
+### 11.3 ConformanceResponse — signed by the OPERATOR (2 of 7)
+Domain tag: `sohocloud/operator-conformance/v0`
+
+Order: `OperatorID` (string), `Challenge` (bytes — the verifier-supplied
+challenge), `Algo` (string), `Idx0` (uint64), `Idx1` (uint64).
+
+This is an operator's signed answer to a conformance challenge. Its distinct
+domain tag domain-separates it from §11.1: because the tag is part of the
+canonical bytes, a signature produced for a conformance challenge can NEVER
+verify as an `OperatorTransmission`, and vice versa. It carries no nonce/`Seq`
+of its own — freshness comes from the verifier's `Challenge` — so the §11.0
+nonce rule does not apply to it; all other §11.0 checks do.
