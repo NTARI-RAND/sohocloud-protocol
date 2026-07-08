@@ -1,0 +1,460 @@
+{
+  "note": "sohocloud-protocol v0 (UNSTABLE) conformance vectors. Ground truth is produced by the reference Go canon and message encoders. A foreign implementer bootstraps from `primitives`, validates the six core messages against `messages`, and validates the Layer-C operator messages (2-of-7, two signatures each) against `operator_messages`. All hex is lowercase. Regenerate via `go test ./vectors -update` after an intentional change.",
+  "encoding": {
+    "varint": "unsigned LEB128 (encoding/binary.PutUvarint); used for lengths and repeated-field counts",
+    "string": "uvarint(byteLen) then raw UTF-8 bytes",
+    "bytes": "uvarint(byteLen) then raw bytes; the Signature field is never encoded",
+    "bool": "single byte 0x00 (false) or 0x01 (true)",
+    "int64": "fixed 8 bytes big-endian, two's-complement",
+    "uint64": "fixed 8 bytes big-endian",
+    "time": "int64 UTC Unix nanoseconds (see int64 rule); location/monotonic dropped",
+    "domain_tag": "each message's canonical bytes begin with its domain-tag encoded as a string"
+  },
+  "primitives": [
+    {
+      "kind": "uvarint",
+      "input": "0",
+      "bytes_hex": "00"
+    },
+    {
+      "kind": "uvarint",
+      "input": "1",
+      "bytes_hex": "01"
+    },
+    {
+      "kind": "uvarint",
+      "input": "127",
+      "bytes_hex": "7f"
+    },
+    {
+      "kind": "uvarint",
+      "input": "128",
+      "bytes_hex": "8001"
+    },
+    {
+      "kind": "uvarint",
+      "input": "255",
+      "bytes_hex": "ff01"
+    },
+    {
+      "kind": "uvarint",
+      "input": "256",
+      "bytes_hex": "8002"
+    },
+    {
+      "kind": "uvarint",
+      "input": "300",
+      "bytes_hex": "ac02"
+    },
+    {
+      "kind": "uvarint",
+      "input": "16384",
+      "bytes_hex": "808001"
+    },
+    {
+      "kind": "uvarint",
+      "input": "1073741824",
+      "bytes_hex": "8080808004"
+    },
+    {
+      "kind": "int64",
+      "input": "0",
+      "bytes_hex": "0000000000000000"
+    },
+    {
+      "kind": "int64",
+      "input": "1",
+      "bytes_hex": "0000000000000001"
+    },
+    {
+      "kind": "int64",
+      "input": "-1",
+      "bytes_hex": "ffffffffffffffff"
+    },
+    {
+      "kind": "int64",
+      "input": "2",
+      "bytes_hex": "0000000000000002"
+    },
+    {
+      "kind": "int64",
+      "input": "-2",
+      "bytes_hex": "fffffffffffffffe"
+    },
+    {
+      "kind": "int64",
+      "input": "9223372036854775807",
+      "bytes_hex": "7fffffffffffffff"
+    },
+    {
+      "kind": "int64",
+      "input": "-9223372036854775808",
+      "bytes_hex": "8000000000000000"
+    },
+    {
+      "kind": "uint64",
+      "input": "0",
+      "bytes_hex": "0000000000000000"
+    },
+    {
+      "kind": "uint64",
+      "input": "1",
+      "bytes_hex": "0000000000000001"
+    },
+    {
+      "kind": "uint64",
+      "input": "18446744073709551615",
+      "bytes_hex": "ffffffffffffffff"
+    },
+    {
+      "kind": "bool",
+      "input": "false",
+      "bytes_hex": "00"
+    },
+    {
+      "kind": "bool",
+      "input": "true",
+      "bytes_hex": "01"
+    },
+    {
+      "kind": "string",
+      "input": "",
+      "bytes_hex": "00"
+    },
+    {
+      "kind": "string",
+      "input": "café — 日本語 🚀",
+      "bytes_hex": "18636166c3a920e2809420e697a5e69cace8aa9e20f09f9a80"
+    },
+    {
+      "kind": "time",
+      "input": "1970-01-01T00:00:00Z (unixnano 0)",
+      "bytes_hex": "0000000000000000"
+    },
+    {
+      "kind": "time",
+      "input": "unixnano 1700000000000000123",
+      "bytes_hex": "17979cfe362a007b"
+    }
+  ],
+  "messages": [
+    {
+      "name": "CapabilityListing",
+      "domain_tag": "sohocloud/listing/v0",
+      "signer": "node",
+      "seed_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+      "public_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+      "fields": {
+        "Capacity": {
+          "DiskMB": 2000000,
+          "MemMB": 65536,
+          "PrintQPS": 3,
+          "VCPUs": 16
+        },
+        "Class": "server",
+        "IssuedAt": "unixnano 1700000000000000123",
+        "NodeID": "node-alpha",
+        "OptIn": {
+          "Compute": true,
+          "Print": false
+        },
+        "Printers": [
+          {
+            "Kind": "traditional",
+            "Model": "HP LaserJet"
+          },
+          {
+            "Kind": "threed",
+            "Model": "Prusa MK4"
+          }
+        ],
+        "Seq": 42
+      },
+      "canonical_bytes_hex": "14736f686f636c6f75642f6c697374696e672f76300a6e6f64652d616c70686106736572766572020b747261646974696f6e616c0b4850204c617365724a657406746872656564095072757361204d4b340000000000000010000000000001000000000000001e84800000000000000003010017979cfe362a007b000000000000002a",
+      "signature_hex": "880fb9b2cb3ecc07ad4eaebf931e2ccc6583d06c8be1b8eb10b823feafb24533afbc68d8778f9e434bc4b5e11291a08673cf61efddeedb57ef3c67d1e8409c03"
+    },
+    {
+      "name": "Heartbeat",
+      "domain_tag": "sohocloud/heartbeat/v0",
+      "signer": "node",
+      "seed_hex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "public_key_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+      "fields": {
+        "NodeID": "node-alpha",
+        "SentAt": "unixnano 1700000050500000000",
+        "Seq": 43
+      },
+      "canonical_bytes_hex": "16736f686f636c6f75642f6865617274626561742f76300a6e6f64652d616c70686117979d09f832d900000000000000002b",
+      "signature_hex": "4db2906112b0528e7c24b2502506f22af5669ff21be303a41e06c5d911d79b5fe9a459ddac0e262e1b6ae40aa385d88bfd8f74d539a0a4ac3909ff5bbf46d807"
+    },
+    {
+      "name": "Assignment",
+      "domain_tag": "sohocloud/assignment/v0",
+      "signer": "coordinator",
+      "seed_hex": "3333333333333333333333333333333333333333333333333333333333333333",
+      "public_key_hex": "17cb79fb2b4120f2b1ec65e4198d6e08b28e813feb01e4a400839b85e18080ce",
+      "fields": {
+        "Fee": {
+          "ContributorShareBps": 6500,
+          "PlatformFeeBps": 3500
+        },
+        "JobID": "job-7f3a",
+        "NodeID": "node-alpha",
+        "OfferedAt": "unixnano 1700000100000000000",
+        "Spec": {
+          "Args": [
+            "--frames",
+            "120",
+            "--quality",
+            "high"
+          ],
+          "Image": "ghcr.io/ntari/render:1.2.3",
+          "PrinterKind": "",
+          "Workload": "compute"
+        }
+      },
+      "canonical_bytes_hex": "17736f686f636c6f75642f61737369676e6d656e742f7630086a6f622d376633610a6e6f64652d616c70686107636f6d707574651a676863722e696f2f6e746172692f72656e6465723a312e322e3304082d2d6672616d657303313230092d2d7175616c69747904686967680000000000000019640000000000000dac17979d157ea0e800",
+      "signature_hex": "ef39c4d7a86b6369c18d1d85b2c23d60dc957f4595b4c996f3653ef2c436584739435d09b63a700730f1e4024a27802e78cb3323ade4b8cf292a8fa44e052509"
+    },
+    {
+      "name": "Decline",
+      "domain_tag": "sohocloud/decline/v0",
+      "signer": "node",
+      "seed_hex": "4444444444444444444444444444444444444444444444444444444444444444",
+      "public_key_hex": "d759793bbc13a2819a827c76adb6fba8a49aee007f49f2d0992d99b825ad2c48",
+      "fields": {
+        "DeclinedAt": "unixnano 1699999990000000777",
+        "JobID": "job-7f3a",
+        "NodeID": "node-alpha",
+        "Reason": "local_policy"
+      },
+      "canonical_bytes_hex": "14736f686f636c6f75642f6465636c696e652f7630086a6f622d376633610a6e6f64652d616c7068610c6c6f63616c5f706f6c69637917979cfbe21e1f09",
+      "signature_hex": "ed2a79b0d992f207b45b2250d1a8a99e0d6cdb8cd07e76ad5c0b21191b2d1780eaf545d64c14d8a48b08d16ab57bfcbca36f7992e1c39af97deb34bf062e530c"
+    },
+    {
+      "name": "JobReport",
+      "domain_tag": "sohocloud/jobreport/v0",
+      "signer": "node",
+      "seed_hex": "5555555555555555555555555555555555555555555555555555555555555555",
+      "public_key_hex": "c6822637c7d310ec57627be00ba259d253749f4aaf644470cffbe53a35f73242",
+      "fields": {
+        "ExitCode": 137,
+        "FailureCause": "oom_killed",
+        "FinishedAt": "unixnano 1700000100000000000",
+        "JobID": "job-7f3a",
+        "NodeID": "node-alpha",
+        "StartedAt": "unixnano 1700000000000000123",
+        "TmpfsExhausted": true
+      },
+      "canonical_bytes_hex": "16736f686f636c6f75642f6a6f627265706f72742f7630086a6f622d376633610a6e6f64652d616c70686100000000000000890a6f6f6d5f6b696c6c65640117979cfe362a007b17979d157ea0e800",
+      "signature_hex": "7f15ca7dd15a4c0bc85e14fa10336f0b225c54e4ba3bbc27db3bd6d1d86399114d767b5a0b07501f4d64c228b30d3349f7e1fe360ff55ae45e7cc822a2976f01"
+    },
+    {
+      "name": "FeeDeclaration",
+      "domain_tag": "sohocloud/fee/v0",
+      "signer": "coordinator",
+      "seed_hex": "6666666666666666666666666666666666666666666666666666666666666666",
+      "public_key_hex": "34b4d9043156cb6dcf0beb0a2949b7559c940d2bcb6dbe8c53a9b30278e3a746",
+      "fields": {
+        "ContributorShareBps": 7000,
+        "CoordinatorID": "coord-soholink",
+        "EffectiveAt": "unixnano 1700000050500000000",
+        "PlatformFeeBps": 3000,
+        "Seq": 5
+      },
+      "canonical_bytes_hex": "10736f686f636c6f75642f6665652f76300e636f6f72642d736f686f6c696e6b0000000000001b580000000000000bb817979d09f832d9000000000000000005",
+      "signature_hex": "62bcba4a0bf06c6e6d29a3c9000899b19d9957a8713e32e25a9ec4e1541fb6868220d85b366f33ac57908ab8f1e01ecc577c04666fab4228dca2da91245d2108"
+    }
+  ],
+  "operator_messages": [
+    {
+      "name": "OperatorTransmission",
+      "domain_tag": "sohocloud/operator/v0",
+      "signer": "operator",
+      "keys": [
+        {
+          "index": 0,
+          "seed_hex": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0",
+          "public_key_hex": "b533d8ad9fcfbdde0b481c1b334ddc3c53412fd614564e7e5afd020368d382c3",
+          "algo": "ed25519"
+        },
+        {
+          "index": 1,
+          "seed_hex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+          "public_key_hex": "bc7cbcb5636375fa1d82434d466724d92377f53b980695dd49d26d0ce12205a5",
+          "algo": "ed25519"
+        },
+        {
+          "index": 2,
+          "seed_hex": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "public_key_hex": "65e8f9b0bc6eae124169f0576f97362d295a8cf5f770b45e14357ce647d33eec",
+          "algo": "ed25519"
+        },
+        {
+          "index": 3,
+          "seed_hex": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+          "public_key_hex": "acf12b4acc1c660a8326aed34039efb728a5e496488240f50a932ab7aba51751",
+          "algo": "ed25519"
+        },
+        {
+          "index": 4,
+          "seed_hex": "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+          "public_key_hex": "a0a0c227d8a1254393590789c18060efeaa0937196a6b7bdb7061841907975a7",
+          "algo": "ed25519"
+        },
+        {
+          "index": 5,
+          "seed_hex": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+          "public_key_hex": "29e5833a915a6429a4e3a7948475c338ef436eb82be89c92f059704403db9d55",
+          "algo": "ed25519"
+        },
+        {
+          "index": 6,
+          "seed_hex": "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6",
+          "public_key_hex": "38aa2fe43ae0b78882f9a103fcacbf7be885effae1109ce46a2b477b774ee248",
+          "algo": "ed25519"
+        }
+      ],
+      "idx0": 2,
+      "idx1": 5,
+      "fields": {
+        "Algo": "ed25519",
+        "Idx0": 2,
+        "Idx1": 5,
+        "Nonce": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+        "OperatorID": "cloudy",
+        "Seq": 7,
+        "Ts": "unixnano 1700000000000000123"
+      },
+      "canonical_bytes_hex": "15736f686f636c6f75642f6f70657261746f722f763006636c6f75647917979cfe362a007b105a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a0000000000000007076564323535313900000000000000020000000000000005",
+      "sig0_hex": "0cec1594d74f88976f82201338c676e1c6ac2241bf52dc2bb5a512570a72538062070183eb0cd5d0529eebc9415598a19db7e63d9058112d9874f5bde0db010b",
+      "sig1_hex": "2051ff43f22fc9fcaeabea1b3c1237f387a841aec9f9a71feb331c6326eee0afae9887bceb8d431cf5e4a26ecc3639652e96bed2d25d0334525bff5a12fb9b07"
+    },
+    {
+      "name": "OperatorRotation",
+      "domain_tag": "sohocloud/operator-rotate/v0",
+      "signer": "operator",
+      "keys": [
+        {
+          "index": 0,
+          "seed_hex": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0",
+          "public_key_hex": "b533d8ad9fcfbdde0b481c1b334ddc3c53412fd614564e7e5afd020368d382c3",
+          "algo": "ed25519"
+        },
+        {
+          "index": 1,
+          "seed_hex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+          "public_key_hex": "bc7cbcb5636375fa1d82434d466724d92377f53b980695dd49d26d0ce12205a5",
+          "algo": "ed25519"
+        },
+        {
+          "index": 2,
+          "seed_hex": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "public_key_hex": "65e8f9b0bc6eae124169f0576f97362d295a8cf5f770b45e14357ce647d33eec",
+          "algo": "ed25519"
+        },
+        {
+          "index": 3,
+          "seed_hex": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+          "public_key_hex": "acf12b4acc1c660a8326aed34039efb728a5e496488240f50a932ab7aba51751",
+          "algo": "ed25519"
+        },
+        {
+          "index": 4,
+          "seed_hex": "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+          "public_key_hex": "a0a0c227d8a1254393590789c18060efeaa0937196a6b7bdb7061841907975a7",
+          "algo": "ed25519"
+        },
+        {
+          "index": 5,
+          "seed_hex": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+          "public_key_hex": "29e5833a915a6429a4e3a7948475c338ef436eb82be89c92f059704403db9d55",
+          "algo": "ed25519"
+        },
+        {
+          "index": 6,
+          "seed_hex": "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6",
+          "public_key_hex": "38aa2fe43ae0b78882f9a103fcacbf7be885effae1109ce46a2b477b774ee248",
+          "algo": "ed25519"
+        }
+      ],
+      "idx0": 0,
+      "idx1": 1,
+      "fields": {
+        "Algo": "ed25519",
+        "Idx0": 0,
+        "Idx1": 1,
+        "KeyIndex": 4,
+        "NewPublicKey": "c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60a7",
+        "Nonce": "33333333333333333333333333333333",
+        "OperatorID": "cloudy",
+        "Seq": 9,
+        "Ts": "unixnano 1700000050500000000"
+      },
+      "canonical_bytes_hex": "1c736f686f636c6f75642f6f70657261746f722d726f746174652f763006636c6f756479000000000000000420c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60a7076564323535313917979d09f832d9001033333333333333333333333333333333000000000000000900000000000000000000000000000001",
+      "sig0_hex": "3d4f32b2790e4915acdb80ea5eec1a91c0d4c245a8d16d007b9657a0b0eddf4c26680dc498b107d3a2ca1ca01e09187fe72d444f5d120a89c61a8f61ac75240c",
+      "sig1_hex": "bc831d12fdcd51c15fa4c1cc73f82ab0bb2973a41704c76db6d7418ee5eeacd519f370aa655f5b35ab4e594793c6897a4eb558b2ac43ef6808955cc3d9aebc0f"
+    },
+    {
+      "name": "ConformanceResponse",
+      "domain_tag": "sohocloud/operator-conformance/v0",
+      "signer": "operator",
+      "keys": [
+        {
+          "index": 0,
+          "seed_hex": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0",
+          "public_key_hex": "b533d8ad9fcfbdde0b481c1b334ddc3c53412fd614564e7e5afd020368d382c3",
+          "algo": "ed25519"
+        },
+        {
+          "index": 1,
+          "seed_hex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+          "public_key_hex": "bc7cbcb5636375fa1d82434d466724d92377f53b980695dd49d26d0ce12205a5",
+          "algo": "ed25519"
+        },
+        {
+          "index": 2,
+          "seed_hex": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "public_key_hex": "65e8f9b0bc6eae124169f0576f97362d295a8cf5f770b45e14357ce647d33eec",
+          "algo": "ed25519"
+        },
+        {
+          "index": 3,
+          "seed_hex": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+          "public_key_hex": "acf12b4acc1c660a8326aed34039efb728a5e496488240f50a932ab7aba51751",
+          "algo": "ed25519"
+        },
+        {
+          "index": 4,
+          "seed_hex": "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+          "public_key_hex": "a0a0c227d8a1254393590789c18060efeaa0937196a6b7bdb7061841907975a7",
+          "algo": "ed25519"
+        },
+        {
+          "index": 5,
+          "seed_hex": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+          "public_key_hex": "29e5833a915a6429a4e3a7948475c338ef436eb82be89c92f059704403db9d55",
+          "algo": "ed25519"
+        },
+        {
+          "index": 6,
+          "seed_hex": "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6",
+          "public_key_hex": "38aa2fe43ae0b78882f9a103fcacbf7be885effae1109ce46a2b477b774ee248",
+          "algo": "ed25519"
+        }
+      ],
+      "idx0": 2,
+      "idx1": 3,
+      "fields": {
+        "Algo": "ed25519",
+        "Challenge": "1111111111111111111111111111111111111111111111111111111111111111",
+        "Idx0": 2,
+        "Idx1": 3,
+        "OperatorID": "cloudy"
+      },
+      "canonical_bytes_hex": "21736f686f636c6f75642f6f70657261746f722d636f6e666f726d616e63652f763006636c6f756479201111111111111111111111111111111111111111111111111111111111111111076564323535313900000000000000020000000000000003",
+      "sig0_hex": "56216226b75920238a0cde89416ed3f51ba6346ca8d13f20d0c39d5bf4d77471083b96ccc72c9b876804bc71abf0baee22b722856f3ab8025ec0cc3ee366430e",
+      "sig1_hex": "af6f0f5e60ef8815485d256a3fcb6e1af7ebe4c5736feec0db8aea139acb603294f8f813e9e49c0b37173708883ed5aa0af695a1800be35085e0eb4dc6dbd100"
+    }
+  ]
+}

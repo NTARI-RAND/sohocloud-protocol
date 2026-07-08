@@ -18,6 +18,16 @@ the Go standard library. Both SoHoLINK (the reference coordinator) and Cloudy
 coordinator from becoming a hub the whole network must route through
 (open problem #7).
 
+## Roles
+
+Frontends speak the node-side surface — `SubmitListing`, `Heartbeat`,
+`PollJobs`, `Decline`, `ReportJob`, `Fees` — on behalf of the machines their
+members contribute; coordinators implement the `Coordinator` interface and
+coordinate (and federate) frontends. Persons never appear on the wire:
+member identity is a frontend concern, and the only identity this module
+knows is workload identity — the NodeID with its canonical SPIFFE binding in
+`identity/`.
+
 ## Layout
 
 ```
@@ -31,6 +41,8 @@ fees/                 FeeDeclaration (coordinator-signed)
 coordinator/          the Coordinator interface — the pluggable role, no algorithm
 anchor/               STUB, not built — witnessed employment-claim layer (#6)
 transport/httpjson/   reference transport; imported by no core package
+vectors/              conformance test: regenerates and checks testdata/vectors.json
+testdata/vectors.json cross-language conformance vectors (normative fixture; see SPEC.md §10)
 ```
 
 ## Status (honest)
@@ -38,6 +50,12 @@ transport/httpjson/   reference transport; imported by no core package
 - **Built:** message types, canonical signing bytes, ed25519 sign/verify, the
   `Coordinator` interface, and a reference HTTP+JSON transport under
   `transport/httpjson`.
+- **Conformance vectors:** `testdata/vectors.json` is the normative
+  cross-language conformance fixture — 25 primitive cases plus all six signed
+  message types with their canonical bytes and ed25519 signatures. A foreign
+  implementation is conformant iff it reproduces the fixture byte-for-byte from
+  the same inputs (`SPEC.md` §10). The `vectors/` test regenerates the fixture
+  from the current encoders and fails the build on any drift.
 - **Reference transport, not the wire:** `transport/httpjson` is optional and is
   imported by no core package. A conformant implementation MAY speak these
   messages over any transport by implementing `coordinator.Coordinator` against
