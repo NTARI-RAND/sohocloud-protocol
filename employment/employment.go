@@ -18,7 +18,7 @@ import (
 // advisory routing hints, not enforcement — opt-out enforcement is local to the
 // node (see Decline / listing.WorkloadOptIn).
 type JobSpec struct {
-	Workload    string // "compute" | "print"
+	Workload    string // "compute" | "print" | "storage"
 	Image       string
 	Args        []string
 	PrinterKind string // set for print workloads; empty otherwise

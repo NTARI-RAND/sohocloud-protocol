@@ -218,7 +218,8 @@ func genMessages(t *testing.T) []messageCase {
 	t.Helper()
 	var out []messageCase
 
-	// 1. CapabilityListing — node-signed. Repeated Printers with >=2 elements.
+	// 1. CapabilityListing — node-signed. Repeated Printers and GPUs with >=2
+	// elements each so the count-prefixed repeat encoding is exercised.
 	{
 		seed := seedFill(0x11)
 		priv := ed25519.NewKeyFromSeed(seed)
@@ -230,8 +231,12 @@ func genMessages(t *testing.T) []messageCase {
 				{Kind: listing.PrinterTraditional, Model: "HP LaserJet"},
 				{Kind: listing.Printer3D, Model: "Prusa MK4"},
 			},
-			Capacity: listing.Capacity{VCPUs: 16, MemMB: 65536, DiskMB: 2_000_000, PrintQPS: 3},
-			OptIn:    listing.WorkloadOptIn{Compute: true, Print: false},
+			GPUs: []listing.GPUCapability{
+				{API: listing.GPUCUDA, Model: "RTX 4090", VRAMMB: 24576},
+				{API: listing.GPUVulkan, Model: "Adreno 750", VRAMMB: 8192},
+			},
+			Capacity: listing.Capacity{VCPUs: 16, MemMB: 65536, DiskMB: 2_000_000, StorageCommitMB: 500_000, PrintQPS: 3},
+			OptIn:    listing.WorkloadOptIn{Compute: true, Print: false, Storage: true},
 			IssuedAt: tAt(fixedNanoA),
 			Seq:      42,
 		}
@@ -249,11 +254,16 @@ func genMessages(t *testing.T) []messageCase {
 					{"Kind": string(l.Printers[0].Kind), "Model": l.Printers[0].Model},
 					{"Kind": string(l.Printers[1].Kind), "Model": l.Printers[1].Model},
 				},
+				"GPUs": []map[string]any{
+					{"API": string(l.GPUs[0].API), "Model": l.GPUs[0].Model, "VRAMMB": l.GPUs[0].VRAMMB},
+					{"API": string(l.GPUs[1].API), "Model": l.GPUs[1].Model, "VRAMMB": l.GPUs[1].VRAMMB},
+				},
 				"Capacity": map[string]int{
 					"VCPUs": l.Capacity.VCPUs, "MemMB": l.Capacity.MemMB,
-					"DiskMB": l.Capacity.DiskMB, "PrintQPS": l.Capacity.PrintQPS,
+					"DiskMB": l.Capacity.DiskMB, "StorageCommitMB": l.Capacity.StorageCommitMB,
+					"PrintQPS": l.Capacity.PrintQPS,
 				},
-				"OptIn":    map[string]bool{"Compute": l.OptIn.Compute, "Print": l.OptIn.Print},
+				"OptIn":    map[string]bool{"Compute": l.OptIn.Compute, "Print": l.OptIn.Print, "Storage": l.OptIn.Storage},
 				"IssuedAt": "unixnano " + i64toa(fixedNanoA),
 				"Seq":      l.Seq,
 			}),

@@ -1,6 +1,6 @@
-// Package listing defines a node's signed advertisement of what compute and
-// physical-print work it will accept. A listing is self-issued and node-signed:
-// no coordinator speaks for a node's capabilities.
+// Package listing defines a node's signed advertisement of what compute,
+// storage, and physical-print work it will accept. A listing is self-issued
+// and node-signed: no coordinator speaks for a node's capabilities.
 package listing
 
 import (
@@ -37,12 +37,41 @@ type PrinterCapability struct {
 	Model string
 }
 
-// Capacity is a point-in-time resource snapshot the node advertises.
+// GPUAPI identifies the compute API through which a GPU is offered. The
+// protocol enumerates APIs so a coordinator can avoid offering GPU work a
+// node cannot run; it does NOT define scheduling policy (SPEC §5.2).
+type GPUAPI string
+
+const (
+	GPUVulkan GPUAPI = "vulkan" // cross-platform, incl. Android / Android TV
+	GPUNNAPI  GPUAPI = "nnapi"  // Android Neural Networks API
+	GPUCUDA   GPUAPI = "cuda"   // NVIDIA desktop/server
+	GPUMetal  GPUAPI = "metal"  // Apple silicon
+)
+
+// GPUCapability describes one GPU the node offers. Advertising a GPU is the
+// opt-in: a listing with no GPUs receives no GPU work, and a node withdraws
+// a GPU by omitting it from its next listing. Like everything in a listing
+// this is advisory — local enforcement still governs (SPEC §5.1).
+type GPUCapability struct {
+	API    GPUAPI
+	Model  string
+	VRAMMB int
+}
+
+// Capacity is a point-in-time resource snapshot the node advertises. DiskMB
+// is scratch space available to a running job; StorageCommitMB is long-lived
+// storage the node commits to hold for the network (shard hosting). The two
+// are deliberately distinct so a node can offer either without the other.
+// How stored data is encrypted, sharded, and audited is a frontend/agent
+// concern outside this protocol: coordination only — the wire never carries
+// stored content.
 type Capacity struct {
-	VCPUs    int
-	MemMB    int
-	DiskMB   int
-	PrintQPS int // print jobs the node will queue; 0 if none
+	VCPUs           int
+	MemMB           int
+	DiskMB          int
+	StorageCommitMB int
+	PrintQPS        int // print jobs the node will queue; 0 if none
 }
 
 // WorkloadOptIn is ADVISORY. The coordinator is NOT a security boundary for
@@ -53,6 +82,7 @@ type Capacity struct {
 type WorkloadOptIn struct {
 	Compute bool
 	Print   bool
+	Storage bool
 }
 
 // CapabilityListing is a node's signed capability advertisement.
@@ -60,6 +90,7 @@ type CapabilityListing struct {
 	NodeID    identity.NodeID
 	Class     ComputeClass
 	Printers  []PrinterCapability
+	GPUs      []GPUCapability
 	Capacity  Capacity
 	OptIn     WorkloadOptIn
 	IssuedAt  time.Time
@@ -80,12 +111,20 @@ func (l CapabilityListing) CanonicalBytes() []byte {
 		b.String(string(p.Kind))
 		b.String(p.Model)
 	}
+	b.Count(len(l.GPUs))
+	for _, g := range l.GPUs {
+		b.String(string(g.API))
+		b.String(g.Model)
+		b.Int64(int64(g.VRAMMB))
+	}
 	b.Int64(int64(l.Capacity.VCPUs))
 	b.Int64(int64(l.Capacity.MemMB))
 	b.Int64(int64(l.Capacity.DiskMB))
+	b.Int64(int64(l.Capacity.StorageCommitMB))
 	b.Int64(int64(l.Capacity.PrintQPS))
 	b.Bool(l.OptIn.Compute)
 	b.Bool(l.OptIn.Print)
+	b.Bool(l.OptIn.Storage)
 	b.Time(l.IssuedAt)
 	b.Uint64(l.Seq)
 	return b.Sum()
