@@ -15,12 +15,23 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/NTARI-RAND/sohocloud-protocol/canon"
 	"github.com/NTARI-RAND/sohocloud-protocol/fees"
 	"github.com/NTARI-RAND/sohocloud-protocol/identity"
 )
+
+// SizeClass is a quantized payload size (in bytes) that a coordinator and its
+// frontends agree on out of band. It is a named type, not a raw byte count, to
+// signal the §5 scope invariant: the wire carries only agreed size CLASSES,
+// never a true object size. The protocol deliberately does NOT enumerate the
+// class values — that is frontend policy (e.g. Cloudy's 1/16/64 MiB) — so this
+// is intent-documenting, not value-enforcing; a coordinator still validates
+// that an advertised class is one it recognizes.
+type SizeClass int64
 
 // StorageLease is a coordinator's signed offer that a node hold one sealed
 // shard for a bounded term, fee terms inline so the node sees the split
@@ -30,8 +41,8 @@ import (
 type StorageLease struct {
 	LeaseID   string
 	NodeID    identity.NodeID
-	ShardRef  [32]byte // opaque content address; carries no meaning off-manifest
-	SizeClass int64    // quantized payload bytes; the wire never sees true sizes
+	ShardRef  [32]byte  // opaque content address; carries no meaning off-manifest
+	SizeClass SizeClass // agreed quantized class; the wire never sees true sizes
 	Fee       fees.Terms
 	IssuedAt  time.Time
 	ExpiresAt time.Time
@@ -116,6 +127,24 @@ func ProofDigest(nonce [16]byte, offset, length int64, rangeBytes []byte) [32]by
 	return out
 }
 
+// ErrChallengeRange is returned by ProofOverShard when a challenge's byte
+// range falls outside the sealed shard.
+var ErrChallengeRange = errors.New("lease: proof challenge range outside sealed shard")
+
+// ProofOverShard is the panic-safe way for a node to answer a challenge: it
+// bounds-checks Offset/Length against the sealed shard BEFORE slicing, then
+// returns ProofDigest over the requested range. A coordinator or malicious
+// challenge naming a negative or out-of-range window gets ErrChallengeRange
+// instead of a slice-bounds panic. For any in-range challenge the digest is
+// identical to calling ProofDigest directly — this only adds the guard.
+func ProofOverShard(sealed []byte, ch ProofChallenge) ([32]byte, error) {
+	if ch.Offset < 0 || ch.Length < 1 || ch.Offset > int64(len(sealed))-ch.Length {
+		return [32]byte{}, fmt.Errorf("%w: offset %d length %d over %d bytes",
+			ErrChallengeRange, ch.Offset, ch.Length, len(sealed))
+	}
+	return ProofDigest(ch.Nonce, ch.Offset, ch.Length, sealed[ch.Offset:ch.Offset+ch.Length]), nil
+}
+
 const (
 	domainLease        = "sohocloud/lease/v0"
 	domainLeaseDecline = "sohocloud/lease-decline/v0"
@@ -130,7 +159,7 @@ func (l StorageLease) CanonicalBytes() []byte {
 	b.String(l.LeaseID)
 	b.String(string(l.NodeID))
 	b.Bytes(l.ShardRef[:])
-	b.Int64(l.SizeClass)
+	b.Int64(int64(l.SizeClass))
 	b.Int64(int64(l.Fee.ContributorShareBps))
 	b.Int64(int64(l.Fee.PlatformFeeBps))
 	b.Time(l.IssuedAt)
@@ -146,8 +175,7 @@ func (l *StorageLease) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid coordinator signature.
 func (l StorageLease) Verify(pub ed25519.PublicKey) bool {
-	return len(l.Signature) == ed25519.SignatureSize &&
-		ed25519.Verify(pub, l.CanonicalBytes(), l.Signature)
+	return canon.VerifySig(pub, l.CanonicalBytes(), l.Signature)
 }
 
 // CanonicalBytes for the decline (SPEC.md §4.8).
@@ -167,8 +195,7 @@ func (d *LeaseDecline) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid node signature.
 func (d LeaseDecline) Verify(pub ed25519.PublicKey) bool {
-	return len(d.Signature) == ed25519.SignatureSize &&
-		ed25519.Verify(pub, d.CanonicalBytes(), d.Signature)
+	return canon.VerifySig(pub, d.CanonicalBytes(), d.Signature)
 }
 
 // CanonicalBytes for the release (SPEC.md §4.9).
@@ -187,8 +214,7 @@ func (r *LeaseRelease) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid node signature.
 func (r LeaseRelease) Verify(pub ed25519.PublicKey) bool {
-	return len(r.Signature) == ed25519.SignatureSize &&
-		ed25519.Verify(pub, r.CanonicalBytes(), r.Signature)
+	return canon.VerifySig(pub, r.CanonicalBytes(), r.Signature)
 }
 
 // CanonicalBytes for the proof response (SPEC.md §4.10).
@@ -211,6 +237,5 @@ func (p *ProofResponse) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid node signature.
 func (p ProofResponse) Verify(pub ed25519.PublicKey) bool {
-	return len(p.Signature) == ed25519.SignatureSize &&
-		ed25519.Verify(pub, p.CanonicalBytes(), p.Signature)
+	return canon.VerifySig(pub, p.CanonicalBytes(), p.Signature)
 }

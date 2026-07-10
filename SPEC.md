@@ -108,6 +108,11 @@ Primitives, in the exact order fields are listed for each message in §4:
   and is time-zone independent. An instant outside the representable range of
   `int64` UTC Unix nanoseconds (approximately the years 1678–2262) is out of scope
   for v0 and MUST be treated as an encoding error rather than wrapped or clamped.
+  The reference encoder enforces this: `canon.Buffer.Time` appends nothing and
+  latches `canon.ErrTimeOutOfRange` (retrievable via `Buffer.Err()`) instead of
+  emitting a wrapped value, so two instants ~584 years apart can never alias to
+  identical bytes. A producer MUST reject via `canon.ValidTime` before signing;
+  a verifier/decoder MUST reject a message whose timestamp fails it.
 - **repeated field** — an unsigned LEB128 varint *count* (the number of elements)
   encoded FIRST, then each element's fields encoded in order, fully inline, using
   the normal primitive rules above. A repeated element that is itself a string is
@@ -290,9 +295,12 @@ Order: `NodeID` (string), `NewPublicKey` (bytes), `Algo` (string),
 Possession of the outgoing key authorizes naming its successor. A verifier
 MUST validate the signature against the key it currently holds for the node
 (a rotation signed by the successor is self-installation and MUST fail),
-MUST enforce strictly monotonic `Seq` per node, and after acceptance MUST
-verify subsequent node messages only against `NewPublicKey`.
-`Algo` ∈ {`ed25519`} in v0.
+MUST enforce strictly monotonic `Seq` per node, and MUST reject a rotation
+whose `NewPublicKey` is not a well-formed key for `Algo` (for `ed25519`, not
+exactly 32 bytes) or whose `Algo` is unknown — otherwise a verifier that
+begins checking subsequent messages against a malformed `NewPublicKey` would
+fault. Only after all of these pass does the verifier begin verifying
+subsequent node messages against `NewPublicKey`. `Algo` ∈ {`ed25519`} in v0.
 
 ### 4.12 KeyRevocation — signed by the key being REVOKED
 Domain tag: `sohocloud/node-revoke/v0`
@@ -300,11 +308,19 @@ Domain tag: `sohocloud/node-revoke/v0`
 Order: `NodeID` (string), `RevokedPublicKey` (bytes), `RevokedAt` (time),
 `Seq` (uint64).
 
-Kills a key with no successor. A verifier MUST honor a validly signed
-revocation unconditionally — a thief holding the key can also produce one,
-and the safe reading of any revocation is "stop trusting this key".
-Re-enrollment after revocation is out-of-band, via the same path as first
-enrollment, never a wire message a key thief could forge.
+Kills a key with no successor. A verifier MUST verify the signature against
+the key it **currently trusts** for `NodeID`, and MUST require that
+`RevokedPublicKey` equals that trusted key. A revocation is only ever honored
+against the exact key it names and kills. This is the anti-abuse binding: a
+stranger can self-sign a revocation carrying a victim's `NodeID` and the
+stranger's own key in `RevokedPublicKey`, but because that key is not the one
+the coordinator trusts for the victim, the equality check fails and the
+revocation is rejected — a node cannot be knocked offline by anyone who does
+not already hold its current key. (Earlier drafts said "honor unconditionally";
+that wording is superseded — the binding to the trusted key is mandatory.)
+Given the current key, the safe reading of a revocation is "stop trusting this
+key". Re-enrollment after revocation is out-of-band, via the same path as
+first enrollment, never a wire message a key thief could forge.
 
 ---
 

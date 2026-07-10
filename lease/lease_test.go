@@ -3,6 +3,7 @@ package lease
 import (
 	"bytes"
 	"crypto/ed25519"
+	"errors"
 	"testing"
 	"time"
 
@@ -105,6 +106,31 @@ func TestProofDigestBindsParameters(t *testing.T) {
 	c := ProofDigest(other, 0, 64, sealed[0:64])
 	if a == c {
 		t.Fatal("digest ignores nonce — precomputable")
+	}
+}
+
+// L5: ProofOverShard bounds-checks before slicing so a malicious challenge
+// cannot panic a node.
+func TestProofOverShardBounds(t *testing.T) {
+	sealed := bytes.Repeat([]byte{0x5C}, 4096)
+	nonce := [16]byte{0x01}
+	ok := ProofChallenge{LeaseID: "l1", Offset: 128, Length: 256, Nonce: nonce}
+	got, err := ProofOverShard(sealed, ok)
+	if err != nil {
+		t.Fatalf("in-range challenge errored: %v", err)
+	}
+	if got != ProofDigest(nonce, 128, 256, sealed[128:384]) {
+		t.Fatal("ProofOverShard digest differs from ProofDigest for the same range")
+	}
+	for _, bad := range []ProofChallenge{
+		{Offset: -1, Length: 10},
+		{Offset: 0, Length: 0},
+		{Offset: 4000, Length: 200}, // runs past the end
+		{Offset: 1 << 62, Length: 1 << 62},
+	} {
+		if _, err := ProofOverShard(sealed, bad); !errors.Is(err, ErrChallengeRange) {
+			t.Fatalf("out-of-range challenge %+v: got %v, want ErrChallengeRange", bad, err)
+		}
 	}
 }
 
