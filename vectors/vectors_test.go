@@ -37,6 +37,7 @@ import (
 	"github.com/NTARI-RAND/sohocloud-protocol/employment"
 	"github.com/NTARI-RAND/sohocloud-protocol/fees"
 	"github.com/NTARI-RAND/sohocloud-protocol/identity"
+	"github.com/NTARI-RAND/sohocloud-protocol/lease"
 	"github.com/NTARI-RAND/sohocloud-protocol/listing"
 	"github.com/NTARI-RAND/sohocloud-protocol/liveness"
 	"github.com/NTARI-RAND/sohocloud-protocol/operator"
@@ -308,10 +309,12 @@ func genMessages(t *testing.T) []messageCase {
 			JobID:  "job-7f3a",
 			NodeID: identity.NodeID("node-alpha"),
 			Spec: employment.JobSpec{
-				Workload:    "compute",
-				Image:       "ghcr.io/ntari/render:1.2.3",
-				Args:        []string{"--frames", "120", "--quality", "high"},
-				PrinterKind: "",
+				Workload:     "compute",
+				Image:        "ghcr.io/ntari/render:1.2.3",
+				Args:         []string{"--frames", "120", "--quality", "high"},
+				PrinterKind:  "",
+				GPUAPI:       "cuda",
+				GPUMinVRAMMB: 8192,
 			},
 			Fee:       fees.Terms{ContributorShareBps: 6500, PlatformFeeBps: 3500},
 			OfferedAt: tAt(fixedNanoC),
@@ -327,10 +330,12 @@ func genMessages(t *testing.T) []messageCase {
 				"JobID":  a.JobID,
 				"NodeID": string(a.NodeID),
 				"Spec": map[string]any{
-					"Workload":    a.Spec.Workload,
-					"Image":       a.Spec.Image,
-					"Args":        a.Spec.Args,
-					"PrinterKind": a.Spec.PrinterKind,
+					"Workload":     a.Spec.Workload,
+					"Image":        a.Spec.Image,
+					"Args":         a.Spec.Args,
+					"PrinterKind":  a.Spec.PrinterKind,
+					"GPUAPI":       a.Spec.GPUAPI,
+					"GPUMinVRAMMB": a.Spec.GPUMinVRAMMB,
 				},
 				"Fee": map[string]int{
 					"ContributorShareBps": a.Fee.ContributorShareBps,
@@ -435,6 +440,214 @@ func genMessages(t *testing.T) []messageCase {
 			}),
 			CanonicalBytesHex: hexOf(f.CanonicalBytes()),
 			SignatureHex:      hexOf(f.Signature),
+		})
+	}
+
+	// 7. StorageLease — coordinator-signed. Bytes field (ShardRef) + two times.
+	{
+		seed := seedFill(0x66)
+		priv := ed25519.NewKeyFromSeed(seed)
+		pub := priv.Public().(ed25519.PublicKey)
+		var ref [32]byte
+		for i := range ref {
+			ref[i] = byte(i)
+		}
+		l := lease.StorageLease{
+			LeaseID:   "lease-01ab",
+			NodeID:    identity.NodeID("node-alpha"),
+			ShardRef:  ref,
+			SizeClass: 1 << 20,
+			Fee:       fees.Terms{ContributorShareBps: 7000, PlatformFeeBps: 3000},
+			IssuedAt:  tAt(fixedNanoA),
+			ExpiresAt: tAt(fixedNanoC),
+			Seq:       3,
+		}
+		l.Sign(priv)
+		out = append(out, messageCase{
+			Name:         "StorageLease",
+			DomainTag:    "sohocloud/lease/v0",
+			Signer:       "coordinator",
+			SeedHex:      hexOf(seed),
+			PublicKeyHex: hexOf(pub),
+			Fields: fieldsJSON(t, map[string]any{
+				"LeaseID":   l.LeaseID,
+				"NodeID":    string(l.NodeID),
+				"ShardRef":  hexOf(ref[:]),
+				"SizeClass": l.SizeClass,
+				"Fee": map[string]int{
+					"ContributorShareBps": l.Fee.ContributorShareBps,
+					"PlatformFeeBps":      l.Fee.PlatformFeeBps,
+				},
+				"IssuedAt":  "unixnano " + i64toa(fixedNanoA),
+				"ExpiresAt": "unixnano " + i64toa(fixedNanoC),
+				"Seq":       l.Seq,
+			}),
+			CanonicalBytesHex: hexOf(l.CanonicalBytes()),
+			SignatureHex:      hexOf(l.Signature),
+		})
+	}
+
+	// 8. LeaseDecline — node-signed.
+	{
+		seed := seedFill(0x77)
+		priv := ed25519.NewKeyFromSeed(seed)
+		pub := priv.Public().(ed25519.PublicKey)
+		d := lease.LeaseDecline{
+			LeaseID:    "lease-01ab",
+			NodeID:     identity.NodeID("node-alpha"),
+			Reason:     lease.DeclineLocalPolicy,
+			DeclinedAt: tAt(fixedNanoD),
+		}
+		d.Sign(priv)
+		out = append(out, messageCase{
+			Name:         "LeaseDecline",
+			DomainTag:    "sohocloud/lease-decline/v0",
+			Signer:       "node",
+			SeedHex:      hexOf(seed),
+			PublicKeyHex: hexOf(pub),
+			Fields: fieldsJSON(t, map[string]any{
+				"LeaseID":    d.LeaseID,
+				"NodeID":     string(d.NodeID),
+				"Reason":     string(d.Reason),
+				"DeclinedAt": "unixnano " + i64toa(fixedNanoD),
+			}),
+			CanonicalBytesHex: hexOf(d.CanonicalBytes()),
+			SignatureHex:      hexOf(d.Signature),
+		})
+	}
+
+	// 9. LeaseRelease — node-signed.
+	{
+		seed := seedFill(0x88)
+		priv := ed25519.NewKeyFromSeed(seed)
+		pub := priv.Public().(ed25519.PublicKey)
+		r := lease.LeaseRelease{
+			LeaseID:    "lease-01ab",
+			NodeID:     identity.NodeID("node-alpha"),
+			ReleasedAt: tAt(fixedNanoB),
+		}
+		r.Sign(priv)
+		out = append(out, messageCase{
+			Name:         "LeaseRelease",
+			DomainTag:    "sohocloud/lease-release/v0",
+			Signer:       "node",
+			SeedHex:      hexOf(seed),
+			PublicKeyHex: hexOf(pub),
+			Fields: fieldsJSON(t, map[string]any{
+				"LeaseID":    r.LeaseID,
+				"NodeID":     string(r.NodeID),
+				"ReleasedAt": "unixnano " + i64toa(fixedNanoB),
+			}),
+			CanonicalBytesHex: hexOf(r.CanonicalBytes()),
+			SignatureHex:      hexOf(r.Signature),
+		})
+	}
+
+	// 10. ProofResponse — node-signed. Two fixed bytes fields (Nonce, Digest);
+	// Digest computed with the SPEC 4.10 formula over a deterministic range.
+	{
+		seed := seedFill(0x99)
+		priv := ed25519.NewKeyFromSeed(seed)
+		pub := priv.Public().(ed25519.PublicKey)
+		var nonce [16]byte
+		for i := range nonce {
+			nonce[i] = byte(0xF0 + i)
+		}
+		rangeBytes := make([]byte, 256)
+		for i := range rangeBytes {
+			rangeBytes[i] = byte(i)
+		}
+		digest := lease.ProofDigest(nonce, 128, 256, rangeBytes)
+		p := lease.ProofResponse{
+			LeaseID:     "lease-01ab",
+			NodeID:      identity.NodeID("node-alpha"),
+			Offset:      128,
+			Length:      256,
+			Nonce:       nonce,
+			Digest:      digest,
+			RespondedAt: tAt(fixedNanoC),
+		}
+		p.Sign(priv)
+		out = append(out, messageCase{
+			Name:         "ProofResponse",
+			DomainTag:    "sohocloud/proof/v0",
+			Signer:       "node",
+			SeedHex:      hexOf(seed),
+			PublicKeyHex: hexOf(pub),
+			Fields: fieldsJSON(t, map[string]any{
+				"LeaseID":     p.LeaseID,
+				"NodeID":      string(p.NodeID),
+				"Offset":      p.Offset,
+				"Length":      p.Length,
+				"Nonce":       hexOf(nonce[:]),
+				"Digest":      hexOf(digest[:]),
+				"RespondedAt": "unixnano " + i64toa(fixedNanoC),
+			}),
+			CanonicalBytesHex: hexOf(p.CanonicalBytes()),
+			SignatureHex:      hexOf(p.Signature),
+		})
+	}
+
+	// 11. KeyRotation — signed by the CURRENT (old) key; NewPublicKey derives
+	// from a distinct seed so both keys appear in the vector.
+	{
+		oldSeed := seedFill(0xAA)
+		oldPriv := ed25519.NewKeyFromSeed(oldSeed)
+		oldPub := oldPriv.Public().(ed25519.PublicKey)
+		newPriv := ed25519.NewKeyFromSeed(seedFill(0xBB))
+		newPub := newPriv.Public().(ed25519.PublicKey)
+		k := identity.KeyRotation{
+			NodeID:       identity.NodeID("node-alpha"),
+			NewPublicKey: newPub,
+			Algo:         "ed25519",
+			RotatedAt:    tAt(fixedNanoB),
+			Seq:          2,
+		}
+		k.Sign(oldPriv)
+		out = append(out, messageCase{
+			Name:         "KeyRotation",
+			DomainTag:    "sohocloud/node-rotate/v0",
+			Signer:       "node (current key)",
+			SeedHex:      hexOf(oldSeed),
+			PublicKeyHex: hexOf(oldPub),
+			Fields: fieldsJSON(t, map[string]any{
+				"NodeID":       string(k.NodeID),
+				"NewPublicKey": hexOf(k.NewPublicKey),
+				"Algo":         k.Algo,
+				"RotatedAt":    "unixnano " + i64toa(fixedNanoB),
+				"Seq":          k.Seq,
+			}),
+			CanonicalBytesHex: hexOf(k.CanonicalBytes()),
+			SignatureHex:      hexOf(k.Signature),
+		})
+	}
+
+	// 12. KeyRevocation — signed by the key being revoked.
+	{
+		seed := seedFill(0xCC)
+		priv := ed25519.NewKeyFromSeed(seed)
+		pub := priv.Public().(ed25519.PublicKey)
+		k := identity.KeyRevocation{
+			NodeID:           identity.NodeID("node-alpha"),
+			RevokedPublicKey: pub,
+			RevokedAt:        tAt(fixedNanoD),
+			Seq:              5,
+		}
+		k.Sign(priv)
+		out = append(out, messageCase{
+			Name:         "KeyRevocation",
+			DomainTag:    "sohocloud/node-revoke/v0",
+			Signer:       "node (revoked key)",
+			SeedHex:      hexOf(seed),
+			PublicKeyHex: hexOf(pub),
+			Fields: fieldsJSON(t, map[string]any{
+				"NodeID":           string(k.NodeID),
+				"RevokedPublicKey": hexOf(k.RevokedPublicKey),
+				"RevokedAt":        "unixnano " + i64toa(fixedNanoD),
+				"Seq":              k.Seq,
+			}),
+			CanonicalBytesHex: hexOf(k.CanonicalBytes()),
+			SignatureHex:      hexOf(k.Signature),
 		})
 	}
 
@@ -676,8 +889,8 @@ func TestVectorSignaturesVerify(t *testing.T) {
 	if err := json.Unmarshal(raw, &vf); err != nil {
 		t.Fatalf("unmarshal vectors: %v", err)
 	}
-	if len(vf.Messages) != 6 {
-		t.Fatalf("expected 6 message vectors, got %d", len(vf.Messages))
+	if len(vf.Messages) != 12 {
+		t.Fatalf("expected 12 message vectors, got %d", len(vf.Messages))
 	}
 
 	for _, m := range vf.Messages {

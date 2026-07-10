@@ -18,10 +18,12 @@ import (
 // advisory routing hints, not enforcement — opt-out enforcement is local to the
 // node (see Decline / listing.WorkloadOptIn).
 type JobSpec struct {
-	Workload    string // "compute" | "print" | "storage"
-	Image       string
-	Args        []string
-	PrinterKind string // set for print workloads; empty otherwise
+	Workload     string // "compute" | "print" | "storage"
+	Image        string
+	Args         []string
+	PrinterKind  string // set for print workloads; empty otherwise
+	GPUAPI       string // advisory hint: "vulkan" | "nnapi" | "cuda" | "metal"; empty = no GPU required
+	GPUMinVRAMMB int64  // advisory minimum VRAM for GPU work; 0 when GPUAPI is empty
 }
 
 // Assignment is a coordinator's signed offer of a specific job to a specific
@@ -93,6 +95,8 @@ func (a Assignment) CanonicalBytes() []byte {
 		b.String(arg)
 	}
 	b.String(a.Spec.PrinterKind)
+	b.String(a.Spec.GPUAPI)
+	b.Int64(a.Spec.GPUMinVRAMMB)
 	b.Int64(int64(a.Fee.ContributorShareBps))
 	b.Int64(int64(a.Fee.PlatformFeeBps))
 	b.Time(a.OfferedAt)
