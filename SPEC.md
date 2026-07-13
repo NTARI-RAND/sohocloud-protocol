@@ -154,11 +154,25 @@ bytes and invalid signatures.
 Domain tag: `sohocloud/listing/v0`
 
 Order: `NodeID` (string), `Class` (string), `Printers` (repeated: `Kind` string,
-`Model` string), `Capacity.VCPUs` (int64), `Capacity.MemMB` (int64),
-`Capacity.DiskMB` (int64), `Capacity.PrintQPS` (int64), `OptIn.Compute` (bool),
-`OptIn.Print` (bool), `IssuedAt` (time), `Seq` (uint64).
+`Model` string), `GPUs` (repeated: `API` string, `Model` string, `VRAMMB`
+int64), `Capacity.VCPUs` (int64), `Capacity.MemMB` (int64),
+`Capacity.DiskMB` (int64), `Capacity.StorageCommitMB` (int64),
+`Capacity.PrintQPS` (int64), `OptIn.Compute` (bool), `OptIn.Print` (bool),
+`OptIn.Storage` (bool), `IssuedAt` (time), `Seq` (uint64).
 
 `Class` ∈ {`micro`, `standard`, `server`}. `Kind` ∈ {`traditional`, `threed`}.
+`API` ∈ {`vulkan`, `nnapi`, `cuda`, `metal`}.
+
+`Capacity.DiskMB` is scratch space available to a running job;
+`Capacity.StorageCommitMB` is long-lived storage the node commits to hold for
+the network (shard hosting). The two are deliberately distinct so a node can
+offer either without the other. How stored data is encrypted, sharded, and
+audited is a frontend/agent concern outside this protocol — coordination only,
+the wire never carries stored content.
+
+Advertising a GPU is the opt-in for GPU work: a listing with no `GPUs`
+receives none, and a node withdraws a GPU by omitting it from its next
+listing.
 
 `Seq` is strictly monotonic per node. A coordinator MUST reject a listing whose
 `Seq` does not strictly exceed the last one seen for that node (replay/rollback

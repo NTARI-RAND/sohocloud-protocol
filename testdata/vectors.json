@@ -149,14 +149,28 @@
           "DiskMB": 2000000,
           "MemMB": 65536,
           "PrintQPS": 3,
+          "StorageCommitMB": 500000,
           "VCPUs": 16
         },
         "Class": "server",
+        "GPUs": [
+          {
+            "API": "cuda",
+            "Model": "RTX 4090",
+            "VRAMMB": 24576
+          },
+          {
+            "API": "vulkan",
+            "Model": "Adreno 750",
+            "VRAMMB": 8192
+          }
+        ],
         "IssuedAt": "unixnano 1700000000000000123",
         "NodeID": "node-alpha",
         "OptIn": {
           "Compute": true,
-          "Print": false
+          "Print": false,
+          "Storage": true
         },
         "Printers": [
           {
@@ -170,8 +184,8 @@
         ],
         "Seq": 42
       },
-      "canonical_bytes_hex": "14736f686f636c6f75642f6c697374696e672f76300a6e6f64652d616c70686106736572766572020b747261646974696f6e616c0b4850204c617365724a657406746872656564095072757361204d4b340000000000000010000000000001000000000000001e84800000000000000003010017979cfe362a007b000000000000002a",
-      "signature_hex": "880fb9b2cb3ecc07ad4eaebf931e2ccc6583d06c8be1b8eb10b823feafb24533afbc68d8778f9e434bc4b5e11291a08673cf61efddeedb57ef3c67d1e8409c03"
+      "canonical_bytes_hex": "14736f686f636c6f75642f6c697374696e672f76300a6e6f64652d616c70686106736572766572020b747261646974696f6e616c0b4850204c617365724a657406746872656564095072757361204d4b3402046375646108525458203430393000000000000060000676756c6b616e0a416472656e6f2037353000000000000020000000000000000010000000000001000000000000001e8480000000000007a120000000000000000301000117979cfe362a007b000000000000002a",
+      "signature_hex": "996279bd351b85d29164a572fdb9b7e2a43c740c4f1fcfe3588de98da8e751ca66c1ffc8d71500930265cdc16fc2c1aecd7076fcefae2a9d5d5e62274c718207"
     },
     {
       "name": "Heartbeat",

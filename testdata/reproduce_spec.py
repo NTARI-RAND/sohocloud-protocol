@@ -100,13 +100,21 @@ def canon_capability_listing(f) -> bytes:
     for p in printers:
         out += enc_string(p["Kind"])
         out += enc_string(p["Model"])
+    gpus = f.get("GPUs", [])
+    out += uvarint(len(gpus))              # repeated: count then elements inline
+    for g in gpus:
+        out += enc_string(g["API"])
+        out += enc_string(g["Model"])
+        out += enc_int64(g["VRAMMB"])
     cap = f["Capacity"]
     out += enc_int64(cap["VCPUs"])
     out += enc_int64(cap["MemMB"])
     out += enc_int64(cap["DiskMB"])
+    out += enc_int64(cap["StorageCommitMB"])
     out += enc_int64(cap["PrintQPS"])
     out += enc_bool(f["OptIn"]["Compute"])
     out += enc_bool(f["OptIn"]["Print"])
+    out += enc_bool(f["OptIn"]["Storage"])
     out += enc_time(f["_IssuedAtNanos"])
     out += enc_uint64(f["Seq"])
     return bytes(out)
