@@ -149,14 +149,28 @@
           "DiskMB": 2000000,
           "MemMB": 65536,
           "PrintQPS": 3,
+          "StorageCommitMB": 500000,
           "VCPUs": 16
         },
         "Class": "server",
+        "GPUs": [
+          {
+            "API": "cuda",
+            "Model": "RTX 4090",
+            "VRAMMB": 24576
+          },
+          {
+            "API": "vulkan",
+            "Model": "Adreno 750",
+            "VRAMMB": 8192
+          }
+        ],
         "IssuedAt": "unixnano 1700000000000000123",
         "NodeID": "node-alpha",
         "OptIn": {
           "Compute": true,
-          "Print": false
+          "Print": false,
+          "Storage": true
         },
         "Printers": [
           {
@@ -170,8 +184,8 @@
         ],
         "Seq": 42
       },
-      "canonical_bytes_hex": "14736f686f636c6f75642f6c697374696e672f76300a6e6f64652d616c70686106736572766572020b747261646974696f6e616c0b4850204c617365724a657406746872656564095072757361204d4b340000000000000010000000000001000000000000001e84800000000000000003010017979cfe362a007b000000000000002a",
-      "signature_hex": "880fb9b2cb3ecc07ad4eaebf931e2ccc6583d06c8be1b8eb10b823feafb24533afbc68d8778f9e434bc4b5e11291a08673cf61efddeedb57ef3c67d1e8409c03"
+      "canonical_bytes_hex": "14736f686f636c6f75642f6c697374696e672f76300a6e6f64652d616c70686106736572766572020b747261646974696f6e616c0b4850204c617365724a657406746872656564095072757361204d4b3402046375646108525458203430393000000000000060000676756c6b616e0a416472656e6f2037353000000000000020000000000000000010000000000001000000000000001e8480000000000007a120000000000000000301000117979cfe362a007b000000000000002a",
+      "signature_hex": "996279bd351b85d29164a572fdb9b7e2a43c740c4f1fcfe3588de98da8e751ca66c1ffc8d71500930265cdc16fc2c1aecd7076fcefae2a9d5d5e62274c718207"
     },
     {
       "name": "Heartbeat",
@@ -208,13 +222,15 @@
             "--quality",
             "high"
           ],
+          "GPUAPI": "cuda",
+          "GPUMinVRAMMB": 8192,
           "Image": "ghcr.io/ntari/render:1.2.3",
           "PrinterKind": "",
           "Workload": "compute"
         }
       },
-      "canonical_bytes_hex": "17736f686f636c6f75642f61737369676e6d656e742f7630086a6f622d376633610a6e6f64652d616c70686107636f6d707574651a676863722e696f2f6e746172692f72656e6465723a312e322e3304082d2d6672616d657303313230092d2d7175616c69747904686967680000000000000019640000000000000dac17979d157ea0e800",
-      "signature_hex": "ef39c4d7a86b6369c18d1d85b2c23d60dc957f4595b4c996f3653ef2c436584739435d09b63a700730f1e4024a27802e78cb3323ade4b8cf292a8fa44e052509"
+      "canonical_bytes_hex": "17736f686f636c6f75642f61737369676e6d656e742f7630086a6f622d376633610a6e6f64652d616c70686107636f6d707574651a676863722e696f2f6e746172692f72656e6465723a312e322e3304082d2d6672616d657303313230092d2d7175616c6974790468696768000463756461000000000000200000000000000019640000000000000dac17979d157ea0e800",
+      "signature_hex": "259a333aacd0f5a14ad66be5f3b0a2defb129545e8c46c8dbcf0df4064381e5e7996fb0dae42b149b07eeaf591d8f27e1550cea4d52739320140d72d1d9c6201"
     },
     {
       "name": "Decline",
@@ -264,6 +280,106 @@
       },
       "canonical_bytes_hex": "10736f686f636c6f75642f6665652f76300e636f6f72642d736f686f6c696e6b0000000000001b580000000000000bb817979d09f832d9000000000000000005",
       "signature_hex": "62bcba4a0bf06c6e6d29a3c9000899b19d9957a8713e32e25a9ec4e1541fb6868220d85b366f33ac57908ab8f1e01ecc577c04666fab4228dca2da91245d2108"
+    },
+    {
+      "name": "StorageLease",
+      "domain_tag": "sohocloud/lease/v0",
+      "signer": "coordinator",
+      "seed_hex": "6666666666666666666666666666666666666666666666666666666666666666",
+      "public_key_hex": "34b4d9043156cb6dcf0beb0a2949b7559c940d2bcb6dbe8c53a9b30278e3a746",
+      "fields": {
+        "ExpiresAt": "unixnano 1700000100000000000",
+        "Fee": {
+          "ContributorShareBps": 7000,
+          "PlatformFeeBps": 3000
+        },
+        "IssuedAt": "unixnano 1700000000000000123",
+        "LeaseID": "lease-01ab",
+        "NodeID": "node-alpha",
+        "Seq": 3,
+        "ShardRef": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "SizeClass": 1048576
+      },
+      "canonical_bytes_hex": "12736f686f636c6f75642f6c656173652f76300a6c656173652d303161620a6e6f64652d616c70686120000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00000000001000000000000000001b580000000000000bb817979cfe362a007b17979d157ea0e8000000000000000003",
+      "signature_hex": "9cb772e79d64e1dd9b7605dcb4a6b2fc2df1af1a05ec90b45875915eb145e74aa7942c08a77d16bd30d6a35465f5578250b8fe025176cc397bed790107635708"
+    },
+    {
+      "name": "LeaseDecline",
+      "domain_tag": "sohocloud/lease-decline/v0",
+      "signer": "node",
+      "seed_hex": "7777777777777777777777777777777777777777777777777777777777777777",
+      "public_key_hex": "c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60a7",
+      "fields": {
+        "DeclinedAt": "unixnano 1699999990000000777",
+        "LeaseID": "lease-01ab",
+        "NodeID": "node-alpha",
+        "Reason": "local_policy"
+      },
+      "canonical_bytes_hex": "1a736f686f636c6f75642f6c656173652d6465636c696e652f76300a6c656173652d303161620a6e6f64652d616c7068610c6c6f63616c5f706f6c69637917979cfbe21e1f09",
+      "signature_hex": "a50611a2971e9699ecd1a32a75089365c192e45dd2d9ebb6b8ac3066d715f1ff3d01f331945f62076d06b6a4b9c7dc5eb09a021ca51a6dae2dd45b322fdaa30c"
+    },
+    {
+      "name": "LeaseRelease",
+      "domain_tag": "sohocloud/lease-release/v0",
+      "signer": "node",
+      "seed_hex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "public_key_hex": "b2491d9502ae28630a2bacb2e0c74510ffcdd328c334ff3e1393e75b2d31e7dc",
+      "fields": {
+        "LeaseID": "lease-01ab",
+        "NodeID": "node-alpha",
+        "ReleasedAt": "unixnano 1700000050500000000"
+      },
+      "canonical_bytes_hex": "1a736f686f636c6f75642f6c656173652d72656c656173652f76300a6c656173652d303161620a6e6f64652d616c70686117979d09f832d900",
+      "signature_hex": "4da35d32a205017eea53126e195182d9b709320f0b353cbe6ccc22d484e88353ee1ccb20887fb2b72ad1a02c5035067e89f0910939d4a6f60cb0ca208a8e7908"
+    },
+    {
+      "name": "ProofResponse",
+      "domain_tag": "sohocloud/proof/v0",
+      "signer": "node",
+      "seed_hex": "9999999999999999999999999999999999999999999999999999999999999999",
+      "public_key_hex": "332ebe8d27cb7323b3a401c1c13b5dd64bccc0e10ecda1c2b5d11a03779a85e5",
+      "fields": {
+        "Digest": "93e552ed0cc680538d018ec1a94cec76ad24074018200b8267b303c8e44dfb69",
+        "LeaseID": "lease-01ab",
+        "Length": 256,
+        "NodeID": "node-alpha",
+        "Nonce": "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+        "Offset": 128,
+        "RespondedAt": "unixnano 1700000100000000000"
+      },
+      "canonical_bytes_hex": "12736f686f636c6f75642f70726f6f662f76300a6c656173652d303161620a6e6f64652d616c7068610000000000000080000000000000010010f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff2093e552ed0cc680538d018ec1a94cec76ad24074018200b8267b303c8e44dfb6917979d157ea0e800",
+      "signature_hex": "791cfc05e0bdbe6fa3bc8522c1825da29aa86b1bfd489f8737462b9ffe7a6435eb02d1918a0b10e53451427b890c70dcccb244828d7daca57f67095753c4fc09"
+    },
+    {
+      "name": "KeyRotation",
+      "domain_tag": "sohocloud/node-rotate/v0",
+      "signer": "node (current key)",
+      "seed_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "public_key_hex": "e734ea6c2b6257de72355e472aa05a4c487e6b463c029ed306df2f01b5636b58",
+      "fields": {
+        "Algo": "ed25519",
+        "NewPublicKey": "7d59c5623dd40a74aa4d5a32ac645d3b3f95daeae4c22be25476dd6a486f7382",
+        "NodeID": "node-alpha",
+        "RotatedAt": "unixnano 1700000050500000000",
+        "Seq": 2
+      },
+      "canonical_bytes_hex": "18736f686f636c6f75642f6e6f64652d726f746174652f76300a6e6f64652d616c706861207d59c5623dd40a74aa4d5a32ac645d3b3f95daeae4c22be25476dd6a486f7382076564323535313917979d09f832d9000000000000000002",
+      "signature_hex": "8c5fb59b87c2b5297629d09a49954e7e36e1568901ae28f9f28e6bca4fef6dae1431088b46ad6e83fd84f6c777000e6aa4c5bc1d59616c113f400383f3b8dc0b"
+    },
+    {
+      "name": "KeyRevocation",
+      "domain_tag": "sohocloud/node-revoke/v0",
+      "signer": "node (revoked key)",
+      "seed_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "public_key_hex": "ca57eed30e4a7274ef4c648f56f58f880b20d2ca25725d9e5c13c83c08c09aeb",
+      "fields": {
+        "NodeID": "node-alpha",
+        "RevokedAt": "unixnano 1699999990000000777",
+        "RevokedPublicKey": "ca57eed30e4a7274ef4c648f56f58f880b20d2ca25725d9e5c13c83c08c09aeb",
+        "Seq": 5
+      },
+      "canonical_bytes_hex": "18736f686f636c6f75642f6e6f64652d7265766f6b652f76300a6e6f64652d616c70686120ca57eed30e4a7274ef4c648f56f58f880b20d2ca25725d9e5c13c83c08c09aeb17979cfbe21e1f090000000000000005",
+      "signature_hex": "5cb22fbe2595bbf1321cfd8003e6e20e7db3efe6736b52fae70616dd8c9d0429fb239ac02d9bd3d933eea6dd49ae4d791a375c3b8397933b5dde94fa9373d409"
     }
   ],
   "operator_messages": [

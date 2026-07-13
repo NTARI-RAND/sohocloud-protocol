@@ -100,13 +100,21 @@ def canon_capability_listing(f) -> bytes:
     for p in printers:
         out += enc_string(p["Kind"])
         out += enc_string(p["Model"])
+    gpus = f.get("GPUs", [])
+    out += uvarint(len(gpus))              # repeated: count then elements inline
+    for g in gpus:
+        out += enc_string(g["API"])
+        out += enc_string(g["Model"])
+        out += enc_int64(g["VRAMMB"])
     cap = f["Capacity"]
     out += enc_int64(cap["VCPUs"])
     out += enc_int64(cap["MemMB"])
     out += enc_int64(cap["DiskMB"])
+    out += enc_int64(cap["StorageCommitMB"])
     out += enc_int64(cap["PrintQPS"])
     out += enc_bool(f["OptIn"]["Compute"])
     out += enc_bool(f["OptIn"]["Print"])
+    out += enc_bool(f["OptIn"]["Storage"])
     out += enc_time(f["_IssuedAtNanos"])
     out += enc_uint64(f["Seq"])
     return bytes(out)
@@ -134,6 +142,8 @@ def canon_assignment(f) -> bytes:
     for a in args:
         out += enc_string(a)
     out += enc_string(spec["PrinterKind"])
+    out += enc_string(spec["GPUAPI"])
+    out += enc_int64(spec["GPUMinVRAMMB"])
     fee = f["Fee"]
     out += enc_int64(fee["ContributorShareBps"])
     out += enc_int64(fee["PlatformFeeBps"])
@@ -171,6 +181,75 @@ def canon_feedeclaration(f) -> bytes:
     out += enc_int64(f["ContributorShareBps"])
     out += enc_int64(f["PlatformFeeBps"])
     out += enc_time(f["_EffectiveAtNanos"])
+    out += enc_uint64(f["Seq"])
+    return bytes(out)
+
+
+def canon_storage_lease(f) -> bytes:
+    out = bytearray()
+    out += enc_domain("sohocloud/lease/v0")
+    out += enc_string(f["LeaseID"])
+    out += enc_string(f["NodeID"])
+    out += enc_bytes(bytes.fromhex(f["ShardRef"]))
+    out += enc_int64(f["SizeClass"])
+    fee = f["Fee"]
+    out += enc_int64(fee["ContributorShareBps"])
+    out += enc_int64(fee["PlatformFeeBps"])
+    out += enc_time(f["_IssuedAtNanos"])
+    out += enc_time(f["_ExpiresAtNanos"])
+    out += enc_uint64(f["Seq"])
+    return bytes(out)
+
+
+def canon_lease_decline(f) -> bytes:
+    out = bytearray()
+    out += enc_domain("sohocloud/lease-decline/v0")
+    out += enc_string(f["LeaseID"])
+    out += enc_string(f["NodeID"])
+    out += enc_string(f["Reason"])
+    out += enc_time(f["_DeclinedAtNanos"])
+    return bytes(out)
+
+
+def canon_lease_release(f) -> bytes:
+    out = bytearray()
+    out += enc_domain("sohocloud/lease-release/v0")
+    out += enc_string(f["LeaseID"])
+    out += enc_string(f["NodeID"])
+    out += enc_time(f["_ReleasedAtNanos"])
+    return bytes(out)
+
+
+def canon_proof_response(f) -> bytes:
+    out = bytearray()
+    out += enc_domain("sohocloud/proof/v0")
+    out += enc_string(f["LeaseID"])
+    out += enc_string(f["NodeID"])
+    out += enc_int64(f["Offset"])
+    out += enc_int64(f["Length"])
+    out += enc_bytes(bytes.fromhex(f["Nonce"]))
+    out += enc_bytes(bytes.fromhex(f["Digest"]))
+    out += enc_time(f["_RespondedAtNanos"])
+    return bytes(out)
+
+
+def canon_key_rotation(f) -> bytes:
+    out = bytearray()
+    out += enc_domain("sohocloud/node-rotate/v0")
+    out += enc_string(f["NodeID"])
+    out += enc_bytes(bytes.fromhex(f["NewPublicKey"]))
+    out += enc_string(f["Algo"])
+    out += enc_time(f["_RotatedAtNanos"])
+    out += enc_uint64(f["Seq"])
+    return bytes(out)
+
+
+def canon_key_revocation(f) -> bytes:
+    out = bytearray()
+    out += enc_domain("sohocloud/node-revoke/v0")
+    out += enc_string(f["NodeID"])
+    out += enc_bytes(bytes.fromhex(f["RevokedPublicKey"]))
+    out += enc_time(f["_RevokedAtNanos"])
     out += enc_uint64(f["Seq"])
     return bytes(out)
 
@@ -342,6 +421,12 @@ ENCODERS = {
     "Decline": canon_decline,
     "JobReport": canon_jobreport,
     "FeeDeclaration": canon_feedeclaration,
+    "StorageLease": canon_storage_lease,
+    "LeaseDecline": canon_lease_decline,
+    "LeaseRelease": canon_lease_release,
+    "ProofResponse": canon_proof_response,
+    "KeyRotation": canon_key_rotation,
+    "KeyRevocation": canon_key_revocation,
 }
 
 
@@ -371,6 +456,19 @@ def prepare_fields(name, fields):
         f["_FinishedAtNanos"] = nanos("FinishedAt")
     elif name == "FeeDeclaration":
         f["_EffectiveAtNanos"] = nanos("EffectiveAt")
+    elif name == "StorageLease":
+        f["_IssuedAtNanos"] = nanos("IssuedAt")
+        f["_ExpiresAtNanos"] = nanos("ExpiresAt")
+    elif name == "LeaseDecline":
+        f["_DeclinedAtNanos"] = nanos("DeclinedAt")
+    elif name == "LeaseRelease":
+        f["_ReleasedAtNanos"] = nanos("ReleasedAt")
+    elif name == "ProofResponse":
+        f["_RespondedAtNanos"] = nanos("RespondedAt")
+    elif name == "KeyRotation":
+        f["_RotatedAtNanos"] = nanos("RotatedAt")
+    elif name == "KeyRevocation":
+        f["_RevokedAtNanos"] = nanos("RevokedAt")
     return f
 
 

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go build, vet, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt (no files may need formatting)
+        run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./...
+
+  conformance:
+    name: Foreign-implementation conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # reproduce_spec.py is a stdlib-only Python reimplementation of the SPEC §3
+      # canonical encoding (hand-rolled ed25519 included). It rebuilds every
+      # canonical_bytes_hex in testdata/vectors.json from field values alone and
+      # verifies all signatures; it exits non-zero on any mismatch. This gate is
+      # what keeps the golden vectors honest for non-Go implementers.
+      - name: Reproduce golden vectors from SPEC (Python, no Go)
+        run: python testdata/reproduce_spec.py

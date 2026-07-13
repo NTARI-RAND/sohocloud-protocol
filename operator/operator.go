@@ -277,12 +277,21 @@ func (r OperatorRotation) Verify(keymap map[int]KeyRecord) error {
 	// The same loop enforces the no-mixed-algorithms invariant (SPEC §11.2): the
 	// new key's Algo (== r.Algo) MUST match every OTHER registered key's algo,
 	// so a rotation can never introduce a heterogeneous, mixed-strength set.
+	// Two passes so the returned error is deterministic regardless of Go's map
+	// iteration order: duplicate-key always takes precedence over algo-mismatch
+	// when both are present, rather than whichever the range happened to hit
+	// first.
 	for idx, rec := range keymap {
 		if idx == r.KeyIndex {
 			continue
 		}
 		if bytes.Equal(rec.PublicKey, r.NewPublicKey) {
 			return ErrDuplicateSigningKey
+		}
+	}
+	for idx, rec := range keymap {
+		if idx == r.KeyIndex {
+			continue
 		}
 		if rec.Algo != r.Algo {
 			return ErrAlgoMismatch

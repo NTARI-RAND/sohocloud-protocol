@@ -38,6 +38,5 @@ func (h *Heartbeat) Sign(priv ed25519.PrivateKey) {
 // Verify reports whether Signature is a valid node signature over the
 // heartbeat. pub is the node's public key, resolved out-of-band.
 func (h Heartbeat) Verify(pub ed25519.PublicKey) bool {
-	return len(h.Signature) == ed25519.SignatureSize &&
-		ed25519.Verify(pub, h.CanonicalBytes(), h.Signature)
+	return canon.VerifySig(pub, h.CanonicalBytes(), h.Signature)
 }

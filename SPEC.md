@@ -108,6 +108,11 @@ Primitives, in the exact order fields are listed for each message in §4:
   and is time-zone independent. An instant outside the representable range of
   `int64` UTC Unix nanoseconds (approximately the years 1678–2262) is out of scope
   for v0 and MUST be treated as an encoding error rather than wrapped or clamped.
+  The reference encoder enforces this: `canon.Buffer.Time` appends nothing and
+  latches `canon.ErrTimeOutOfRange` (retrievable via `Buffer.Err()`) instead of
+  emitting a wrapped value, so two instants ~584 years apart can never alias to
+  identical bytes. A producer MUST reject via `canon.ValidTime` before signing;
+  a verifier/decoder MUST reject a message whose timestamp fails it.
 - **repeated field** — an unsigned LEB128 varint *count* (the number of elements)
   encoded FIRST, then each element's fields encoded in order, fully inline, using
   the normal primitive rules above. A repeated element that is itself a string is
@@ -127,7 +132,7 @@ no leading version byte, no total-length prefix wrapping the message, and no
 trailing bytes after the last field. The `Order:` list in §4 is exhaustive and
 authoritative — the message's **signature field(s)** are the ONLY fields
 excluded, and no field exists in the canonical bytes that is not named there.
-For the six core messages of §4 that single excluded field is `Signature`. The
+For the twelve core messages of §4 that single excluded field is `Signature`. The
 Layer-C operator messages of §11 carry **two** signatures (`Sig0` and `Sig1`)
 over the same canonical bytes; both are excluded exactly as `Signature` is here,
 and, like `Signature`, neither appears in an `Order:` clause. A verifier
@@ -154,11 +159,25 @@ bytes and invalid signatures.
 Domain tag: `sohocloud/listing/v0`
 
 Order: `NodeID` (string), `Class` (string), `Printers` (repeated: `Kind` string,
-`Model` string), `Capacity.VCPUs` (int64), `Capacity.MemMB` (int64),
-`Capacity.DiskMB` (int64), `Capacity.PrintQPS` (int64), `OptIn.Compute` (bool),
-`OptIn.Print` (bool), `IssuedAt` (time), `Seq` (uint64).
+`Model` string), `GPUs` (repeated: `API` string, `Model` string, `VRAMMB`
+int64), `Capacity.VCPUs` (int64), `Capacity.MemMB` (int64),
+`Capacity.DiskMB` (int64), `Capacity.StorageCommitMB` (int64),
+`Capacity.PrintQPS` (int64), `OptIn.Compute` (bool), `OptIn.Print` (bool),
+`OptIn.Storage` (bool), `IssuedAt` (time), `Seq` (uint64).
 
 `Class` ∈ {`micro`, `standard`, `server`}. `Kind` ∈ {`traditional`, `threed`}.
+`API` ∈ {`vulkan`, `nnapi`, `cuda`, `metal`}.
+
+`Capacity.DiskMB` is scratch space available to a running job;
+`Capacity.StorageCommitMB` is long-lived storage the node commits to hold for
+the network (shard hosting). The two are deliberately distinct so a node can
+offer either without the other. How stored data is encrypted, sharded, and
+audited is a frontend/agent concern outside this protocol — coordination only,
+the wire never carries stored content.
+
+Advertising a GPU is the opt-in for GPU work: a listing with no `GPUs`
+receives none, and a node withdraws a GPU by omitting it from its next
+listing.
 
 `Seq` is strictly monotonic per node. A coordinator MUST reject a listing whose
 `Seq` does not strictly exceed the last one seen for that node (replay/rollback
@@ -178,8 +197,13 @@ Domain tag: `sohocloud/assignment/v0`
 
 Order: `JobID` (string), `NodeID` (string), `Spec.Workload` (string),
 `Spec.Image` (string), `Spec.Args` (repeated string), `Spec.PrinterKind`
-(string), `Fee.ContributorShareBps` (int64), `Fee.PlatformFeeBps` (int64),
+(string), `Spec.GPUAPI` (string), `Spec.GPUMinVRAMMB` (int64),
+`Fee.ContributorShareBps` (int64), `Fee.PlatformFeeBps` (int64),
 `OfferedAt` (time).
+
+`Spec.GPUAPI` ∈ {``, `vulkan`, `nnapi`, `cuda`, `metal`} — an advisory routing
+hint like `PrinterKind`; empty means no GPU is required and `GPUMinVRAMMB`
+MUST then be `0`.
 
 The fee terms are attached inline so a node sees the split before it commits.
 In the pull model there is no separate accept message.
@@ -209,6 +233,94 @@ Order: `CoordinatorID` (string), `Terms.ContributorShareBps` (int64),
 `Terms.PlatformFeeBps` (int64), `EffectiveAt` (time), `Seq` (uint64).
 
 `ContributorShareBps + PlatformFeeBps` SHOULD equal `10000`.
+
+### 4.7 StorageLease — signed by the COORDINATOR
+Domain tag: `sohocloud/lease/v0`
+
+Order: `LeaseID` (string), `NodeID` (string), `ShardRef` (bytes),
+`SizeClass` (int64), `Fee.ContributorShareBps` (int64),
+`Fee.PlatformFeeBps` (int64), `IssuedAt` (time), `ExpiresAt` (time),
+`Seq` (uint64).
+
+Storage is a LEASE, not a job: an ongoing obligation to hold one sealed
+shard for a bounded term. `ShardRef` is an opaque 32-byte content address
+and `SizeClass` a quantized payload size — the protocol MUST NOT carry true
+object sizes or stored content; encryption, padding, and sharding are
+frontend concerns above this waist. Renewal is a new `StorageLease` for the
+same `LeaseID` with strictly higher `Seq` (same rollback rule as §4.1). Fee
+terms ride inline, as in §4.3.
+
+### 4.8 LeaseDecline — signed by the NODE
+Domain tag: `sohocloud/lease-decline/v0`
+
+Order: `LeaseID` (string), `NodeID` (string), `Reason` (string),
+`DeclinedAt` (time).
+
+`Reason` ∈ {`local_policy`, `capacity`, `unavailable`}; `local_policy` is the
+opt-out path (§5.1) for storage exactly as §4.4 is for jobs.
+
+### 4.9 LeaseRelease — signed by the NODE
+Domain tag: `sohocloud/lease-release/v0`
+
+Order: `LeaseID` (string), `NodeID` (string), `ReleasedAt` (time).
+
+A node may always stop holding (sovereignty includes leaving). The signed
+release ends its metering; re-placing the shard is the frontend's concern.
+
+### 4.10 ProofChallenge / ProofResponse — response signed by the NODE
+Domain tag (response): `sohocloud/proof/v0`
+
+A `ProofChallenge{LeaseID, Offset, Length, Nonce (16 bytes), IssuedAt}` is
+NOT signed: nodes fetch challenges by polling over the authenticated channel
+(pull model), and a challenge commits no one to anything. The signed
+artifact is the response.
+
+Response Order: `LeaseID` (string), `NodeID` (string), `Offset` (int64),
+`Length` (int64), `Nonce` (bytes), `Digest` (bytes), `RespondedAt` (time).
+
+`Digest` MUST be computed exactly as
+`SHA-256(Nonce || uint64be(Offset) || uint64be(Length) || sealed[Offset : Offset+Length])`
+over the sealed shard bytes. The response restates the challenged range and
+nonce so it stands alone as a non-repudiable metering fact — the storage
+counterpart of §4.5. A verifier MUST reject a response whose
+`(LeaseID, Nonce)` it has already accepted: nonces are single-use, which is
+what defeats replaying a recorded answer.
+
+### 4.11 KeyRotation — signed by the node's CURRENT key
+Domain tag: `sohocloud/node-rotate/v0`
+
+Order: `NodeID` (string), `NewPublicKey` (bytes), `Algo` (string),
+`RotatedAt` (time), `Seq` (uint64).
+
+Possession of the outgoing key authorizes naming its successor. A verifier
+MUST validate the signature against the key it currently holds for the node
+(a rotation signed by the successor is self-installation and MUST fail),
+MUST enforce strictly monotonic `Seq` per node, and MUST reject a rotation
+whose `NewPublicKey` is not a well-formed key for `Algo` (for `ed25519`, not
+exactly 32 bytes) or whose `Algo` is unknown — otherwise a verifier that
+begins checking subsequent messages against a malformed `NewPublicKey` would
+fault. Only after all of these pass does the verifier begin verifying
+subsequent node messages against `NewPublicKey`. `Algo` ∈ {`ed25519`} in v0.
+
+### 4.12 KeyRevocation — signed by the key being REVOKED
+Domain tag: `sohocloud/node-revoke/v0`
+
+Order: `NodeID` (string), `RevokedPublicKey` (bytes), `RevokedAt` (time),
+`Seq` (uint64).
+
+Kills a key with no successor. A verifier MUST verify the signature against
+the key it **currently trusts** for `NodeID`, and MUST require that
+`RevokedPublicKey` equals that trusted key. A revocation is only ever honored
+against the exact key it names and kills. This is the anti-abuse binding: a
+stranger can self-sign a revocation carrying a victim's `NodeID` and the
+stranger's own key in `RevokedPublicKey`, but because that key is not the one
+the coordinator trusts for the victim, the equality check fails and the
+revocation is rejected — a node cannot be knocked offline by anyone who does
+not already hold its current key. (Earlier drafts said "honor unconditionally";
+that wording is superseded — the binding to the trusted key is mandatory.)
+Given the current key, the safe reading of a revocation is "stop trusting this
+key". Re-enrollment after revocation is out-of-band, via the same path as
+first enrollment, never a wire message a key thief could forge.
 
 ---
 
@@ -343,7 +455,7 @@ JSON first.
   `MaxUint64`; both bools; the empty string and a multibyte UTF-8 string; and
   `time` at the Unix epoch and at a fixed nanosecond instant.
 
-- **`messages`** — one entry per signed message type (all six of §4). Each entry
+- **`messages`** — one entry per signed message type (every signed message of §4). Each entry
   records: `name`, `domain_tag`, `signer` (`node` or `coordinator`), the 32-byte
   ed25519 `seed_hex` and the derived `public_key_hex`, the message `fields`, the
   `canonical_bytes_hex` (the output of `CanonicalBytes()`, `Signature` excluded),
@@ -429,7 +541,7 @@ canonical.
 orthogonal identity: the **operator** — a frontend (e.g. Cloudy) that terminates
 member and node identity inside itself and presents a single rotating credential
 to a coordinator. It is deliberately separate from node workload identity (§2):
-the six core coordination messages (§4) are UNCHANGED and are NOT signed with an
+the core coordination messages (§4) are UNCHANGED and are NOT signed with an
 operator credential.
 
 An operator holds **seven** Ed25519 keypairs (indices `0..6`) and signs each
@@ -454,7 +566,7 @@ only.
 - **Migration seam.** The reference implementation routes operator signing and
   verification through a `Signer`/`Verifier` interface, implemented with stdlib
   Ed25519 today, precisely so the algorithm can be swapped by adding a `v1`
-  domain tag later without touching the six core messages. This is an
+  domain tag later without touching the core messages. This is an
   implementation note; the wire contract is the field orders and tags below.
 
 **Encoding of operator fields (no special casing).** Every field in the §11
