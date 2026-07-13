@@ -1,0 +1,32 @@
+name: dependency-leaf
+
+# The coordination protocol is a dependency leaf (CONFORMANCE.md): it depends
+# on nothing but the Go standard library. This check turns a violation into a
+# failed build rather than a review catch.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  leaf:
+    name: go.mod has zero dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+      - name: assert dependency leaf
+        run: |
+          deps=$(go list -m all | grep -v "^$(go list -m)$" || true)
+          if [ -n "$deps" ]; then
+            echo "Dependency-leaf invariant violated. This module must depend on nothing but the Go standard library. Found:"
+            echo "$deps"
+            exit 1
+          fi
+          echo "OK: dependency leaf holds (stdlib only)."
