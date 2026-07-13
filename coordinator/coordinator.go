@@ -17,6 +17,7 @@ import (
 	"github.com/NTARI-RAND/sohocloud-protocol/employment"
 	"github.com/NTARI-RAND/sohocloud-protocol/fees"
 	"github.com/NTARI-RAND/sohocloud-protocol/identity"
+	"github.com/NTARI-RAND/sohocloud-protocol/lease"
 	"github.com/NTARI-RAND/sohocloud-protocol/listing"
 	"github.com/NTARI-RAND/sohocloud-protocol/liveness"
 )
@@ -47,4 +48,41 @@ type Coordinator interface {
 
 	// Fees returns the coordinator's current signed fee declaration.
 	Fees(ctx context.Context) (fees.FeeDeclaration, error)
+}
+
+// StorageCoordinator is the OPTIONAL storage-lease surface. It is a separate
+// capability interface, not new methods on Coordinator, so a coordinator can
+// adopt the compute/print protocol without implementing storage yet — a
+// consumer discovers support by type assertion and treats its absence as
+// "this coordinator does not lease storage", never as an error. The same
+// pull model and SPIFFE-binding discipline apply throughout.
+type StorageCoordinator interface {
+	// PollLeases returns the storage leases currently offered to the calling
+	// node, and the open proof challenges against its held leases. Identity
+	// binding rules are identical to PollJobs.
+	PollLeases(ctx context.Context, id identity.NodeID) ([]lease.StorageLease, []lease.ProofChallenge, error)
+
+	// DeclineLease records a node's signed refusal of an offered lease.
+	DeclineLease(ctx context.Context, d lease.LeaseDecline) error
+
+	// ReleaseLease records a node's signed early exit from a held lease.
+	ReleaseLease(ctx context.Context, r lease.LeaseRelease) error
+
+	// SubmitProof records a node's signed proof of possession — the fact from
+	// which storage metering and payout derive. Implementations MUST reject a
+	// response whose (LeaseID, Nonce) was seen before: nonces are single-use.
+	SubmitProof(ctx context.Context, p lease.ProofResponse) error
+}
+
+// KeyLifecycleCoordinator is the OPTIONAL node-key rotation surface, split
+// out for the same staged-adoption reason as StorageCoordinator.
+type KeyLifecycleCoordinator interface {
+	// RotateKey verifies k against the node's CURRENT key, enforces strictly
+	// monotonic Seq, and thereafter trusts only k.NewPublicKey for the node.
+	RotateKey(ctx context.Context, k identity.KeyRotation) error
+
+	// RevokeKey kills a node key with no successor. Implementations MUST
+	// honor a validly signed revocation unconditionally; re-enrollment is
+	// out-of-band.
+	RevokeKey(ctx context.Context, k identity.KeyRevocation) error
 }

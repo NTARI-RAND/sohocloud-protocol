@@ -18,10 +18,12 @@ import (
 // advisory routing hints, not enforcement — opt-out enforcement is local to the
 // node (see Decline / listing.WorkloadOptIn).
 type JobSpec struct {
-	Workload    string // "compute" | "print" | "storage"
-	Image       string
-	Args        []string
-	PrinterKind string // set for print workloads; empty otherwise
+	Workload     string // "compute" | "print" | "storage"
+	Image        string
+	Args         []string
+	PrinterKind  string // set for print workloads; empty otherwise
+	GPUAPI       string // advisory hint: "vulkan" | "nnapi" | "cuda" | "metal"; empty = no GPU required
+	GPUMinVRAMMB int64  // advisory minimum VRAM for GPU work; 0 when GPUAPI is empty
 }
 
 // Assignment is a coordinator's signed offer of a specific job to a specific
@@ -93,6 +95,8 @@ func (a Assignment) CanonicalBytes() []byte {
 		b.String(arg)
 	}
 	b.String(a.Spec.PrinterKind)
+	b.String(a.Spec.GPUAPI)
+	b.Int64(a.Spec.GPUMinVRAMMB)
 	b.Int64(int64(a.Fee.ContributorShareBps))
 	b.Int64(int64(a.Fee.PlatformFeeBps))
 	b.Time(a.OfferedAt)
@@ -107,8 +111,7 @@ func (a *Assignment) Sign(priv ed25519.PrivateKey) {
 // Verify reports whether Signature is a valid coordinator signature over the
 // assignment.
 func (a Assignment) Verify(pub ed25519.PublicKey) bool {
-	return len(a.Signature) == ed25519.SignatureSize &&
-		ed25519.Verify(pub, a.CanonicalBytes(), a.Signature)
+	return canon.VerifySig(pub, a.CanonicalBytes(), a.Signature)
 }
 
 // CanonicalBytes returns the deterministic signing payload for the decline,
@@ -129,8 +132,7 @@ func (d *Decline) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid node signature over the decline.
 func (d Decline) Verify(pub ed25519.PublicKey) bool {
-	return len(d.Signature) == ed25519.SignatureSize &&
-		ed25519.Verify(pub, d.CanonicalBytes(), d.Signature)
+	return canon.VerifySig(pub, d.CanonicalBytes(), d.Signature)
 }
 
 // CanonicalBytes returns the deterministic signing payload for the job report,
@@ -154,6 +156,5 @@ func (r *JobReport) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid node signature over the report.
 func (r JobReport) Verify(pub ed25519.PublicKey) bool {
-	return len(r.Signature) == ed25519.SignatureSize &&
-		ed25519.Verify(pub, r.CanonicalBytes(), r.Signature)
+	return canon.VerifySig(pub, r.CanonicalBytes(), r.Signature)
 }
