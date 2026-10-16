@@ -20,12 +20,20 @@ This module is the **coordination protocol** of a JFA **substrate**: the depende
 
 | Invariant (architecture) | Mechanism here | Check |
 |---|---|---|
-| The coordination protocol is a **dependency leaf** | `go.mod` declares zero requirements; standard library only | CI: `.github/workflows/dependency-leaf.yml` fails the build on any added dependency |
+| The coordination protocol is a **dependency leaf** | `go.mod` declares zero requirements; standard library only | CI: `.github/workflows/dependency-leaf.yml` fails the build on any added dependency; `TestInvariant_P_lean_code_StdlibOnlyCopyleft` (see below) |
 | **Persons never appear on the wire** | The only identity this module knows is workload identity — `identity/` NodeID with its canonical SPIFFE binding; no message carries a name, contact, or person-shaped field | SPEC (normative); the type surface; golden vectors |
 | **No unremovable hosting chokepoint** | The coordinator is a pluggable role: a frontend MAY run its own coordinator or match directly against nodes (SPEC §1) | SPEC normative text; two consumers exist against the published tag |
 | **Fee legibility** | Fees exist on the wire only as a coordinator-signed `FeeDeclaration` — authored, legible, contestable | `fees/`; golden vectors |
 | **Legibility is an output, not a comment** | `SPEC.md` is normative and a build deliverable: a foreign implementer builds from it without reading this source | `testdata/vectors.json` (ground truth) + `testdata/reproduce_spec.py` (independent reproducer) + `vectors/` golden test — drift between code and committed vectors fails the build |
 | **Canonical, deterministic encoding** | `canon/` length-prefixed, domain-separated signing encoder | golden vectors regenerated-and-compared byte-for-byte on every test run |
+
+## JFA registry bindings
+
+Tests that bind an ID from the Janus invariant registry (`jfa-conformance-suite.py` in NTARI-RAND/Janus) are named `TestInvariant_<ID>_<Name>`, with any `-` in the ID written `_`. `go test -run TestInvariant_ -v ./...` lists them; `jfa-conformance-suite.py --bindings ../sohocloud-protocol` counts them.
+
+| Registry ID | Test | What it checks |
+|---|---|---|
+| **P-lean-code** — protocol software depends on nothing but its language's standard library, is auditable whole, and is copyleft | `TestInvariant_P_lean_code_StdlibOnlyCopyleft` (`conformance_test.go`) | `go.mod` has no require/replace/exclude/retract, and there is no `go.sum` or `vendor/`; every Go file, tests included, imports only the standard library or this module, and none uses cgo; the Python reproducer imports only the Python standard library; `LICENSE` is the GNU AGPL v3 and no file declares another SPDX license; CI still runs `go test ./...`, the reproducer, and the dependency-leaf workflow |
 
 ## Deliberately out of scope
 
