@@ -34,12 +34,16 @@ import (
 //     this module's own packages, and none uses cgo (import "C"), which would
 //     pull in C the auditor must also read;
 //   - the independent Python reproducer imports only the Python standard
-//     library, so a foreign implementer needs nothing but a stock interpreter;
-//   - the software is copyleft: LICENSE is the GNU AGPL v3, and no file
-//     declares any other license;
+//     library — every name in a comma list, and no dynamic imports — so a
+//     foreign implementer needs nothing but a stock interpreter;
+//   - the software is copyleft: LICENSE is the GNU AGPL v3, every license
+//     file in any folder is the AGPL, and no comment declares any other
+//     license;
 //   - the audit actually runs in CI: ci.yml runs `go test ./...` (which runs
 //     this test) and the Python reproducer, and the dependency-leaf workflow
-//     is still present.
+//     is still present and still fails the build. Residual, named: a
+//     workflow's effect cannot be proven from its text; these checks only
+//     raise the bar.
 func TestInvariant_P_lean_code_StdlibOnlyCopyleft(t *testing.T) {
 	t.Run("go.mod declares no dependencies", testLeanGoMod)
 	t.Run("Go imports are stdlib or this module only", testLeanGoImports)
@@ -143,7 +147,30 @@ var pythonStdlib = map[string]bool{
 	"string": true, "textwrap": true, "hmac": true, "secrets": true,
 }
 
-var pyImport = regexp.MustCompile(`^\s*(?:import|from)\s+([A-Za-z_][A-Za-z0-9_]*)`)
+var (
+	pyImportLine = regexp.MustCompile(`^\s*import\s+(.+)$`)
+	pyFromLine   = regexp.MustCompile(`^\s*from\s+([A-Za-z_][A-Za-z0-9_.]*)\s+import(\s|$)`)
+	pyDynamic    = regexp.MustCompile(`__import__\s*\(|(^|[^A-Za-z0-9_])importlib`)
+)
+
+// pyModules returns the top-level module names a line imports, covering
+// "import a, b.c as d" and "from a.b import x".
+func pyModules(line string) []string {
+	if m := pyFromLine.FindStringSubmatch(line); m != nil {
+		return []string{strings.SplitN(m[1], ".", 2)[0]}
+	}
+	m := pyImportLine.FindStringSubmatch(line)
+	if m == nil {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(m[1], ",") {
+		if f := strings.Fields(strings.TrimSpace(part)); len(f) > 0 {
+			out = append(out, strings.SplitN(f[0], ".", 2)[0])
+		}
+	}
+	return out
+}
 
 func testLeanPython(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("testdata", "*.py"))
@@ -159,21 +186,26 @@ func testLeanPython(t *testing.T) {
 			t.Fatalf("read %s: %v", path, err)
 		}
 		for i, line := range strings.Split(string(data), "\n") {
-			m := pyImport.FindStringSubmatch(line)
-			if m == nil {
-				continue
+			if !strings.HasPrefix(strings.TrimSpace(line), "#") && pyDynamic.MatchString(line) {
+				t.Errorf("%s:%d uses a dynamic import: the reproducer's imports must be auditable as plain import statements", path, i+1)
 			}
-			if !pythonStdlib[m[1]] {
-				t.Errorf("%s:%d imports %q, which is not in pythonStdlib: the reproducer must run on a stock interpreter", path, i+1, m[1])
+			for _, name := range pyModules(line) {
+				if !pythonStdlib[name] {
+					t.Errorf("%s:%d imports %q, which is not in pythonStdlib: the reproducer must run on a stock interpreter", path, i+1, name)
+				}
 			}
 		}
 	}
 }
 
-// spdx matches a license tag where tags live: at the start of a comment line
-// (Go, Python, shell, YAML, Markdown or C-style), so the pattern below and
-// prose that merely mentions a tag do not count as declarations.
-var spdx = regexp.MustCompile(`(?m)^[ \t]*(?://|#|<!--|/\*|\*)[ \t]*SPDX-License-Identifier:[ \t]*([A-Za-z0-9.+-]+)`)
+// spdx matches a license tag anywhere on a comment line (Go, Python, shell,
+// YAML, Markdown or C-style), so "// Copyright … <tag>: MIT" counts, while the
+// pattern below and prose outside comments do not count as declarations.
+var spdx = regexp.MustCompile(`(?m)^[ \t]*(?://|#|<!--|/\*|\*).*?SPDX-License-Identifier:[ \t]*([A-Za-z0-9.+-]+)`)
+
+// licenseFile matches a license file name at any depth: LICENSE, LICENCE or
+// COPYING, with or without an extension.
+var licenseFile = regexp.MustCompile(`^(?i)(LICENSE|LICENCE|COPYING)(\..*)?$`)
 
 func testLeanCopyleft(t *testing.T) {
 	lic, err := os.ReadFile("LICENSE")
@@ -204,6 +236,9 @@ func testLeanCopyleft(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		if licenseFile.MatchString(info.Name()) && !strings.Contains(string(data), "GNU AFFERO GENERAL PUBLIC LICENSE") {
+			t.Errorf("%s is a license file that is not the GNU AGPL: protocol software is AGPL-3.0 only, in every folder", path)
+		}
 		for _, m := range spdx.FindAllStringSubmatch(string(data), -1) {
 			if !strings.HasPrefix(m[1], "AGPL-3.0") {
 				t.Errorf("%s declares SPDX license %s: protocol software is AGPL-3.0 only", path, m[1])
@@ -232,5 +267,10 @@ func testLeanCI(t *testing.T) {
 	}
 	if !strings.Contains(string(leaf), "go list -m all") {
 		t.Error("dependency-leaf.yml no longer lists module dependencies")
+	}
+	// Residual, named: a workflow's effect cannot be proven from its text.
+	// Requiring the failing exit raises the bar; it does not close it.
+	if !strings.Contains(string(leaf), "exit 1") {
+		t.Error("dependency-leaf.yml no longer fails the build (no exit 1) when a dependency appears")
 	}
 }
