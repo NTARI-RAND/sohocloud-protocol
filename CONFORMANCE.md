@@ -56,3 +56,11 @@ Depends on: the Go standard library. Nothing else — no other NTARI module, no 
 ## Product-specific notes (last, per the ordering rule)
 
 SoHoLINK is the reference coordinator; Cloudy is a reference frontend. Both consume this module by published version tag. Neither is privileged by the protocol: any conformant implementation may replace either.
+
+## Reliability checks
+
+[RELIABILITY.md](RELIABILITY.md) maps transport and malformed-input coverage to
+local commands and `.github/workflows/reliability.yml`: race-enabled tests,
+five bounded fuzz targets, and retained failure inputs. JSON decoding alone does
+not authenticate or validate a message; node identity binding, replay state,
+and current-key resolution remain coordinator/middleware obligations.
