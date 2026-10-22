@@ -43,9 +43,11 @@ import (
 //   - the coordinator interfaces are pinned, so a new operation — a possible
 //     coordinator → node call — fails until reviewed;
 //   - no wire message carries a dialable address: no wire package imports a
-//     networking package, and no field is named for an address, host, port,
-//     endpoint, URL, IP, callback or webhook;
-//   - no package in the module opens a listening socket;
+//     networking package, and no field name or json tag names an address,
+//     host, port, endpoint, URL, IP, callback or webhook, plurals included;
+//   - no package in the module opens a listening socket, or serves on one
+//     handed to it (FileListener), and none hides net calls behind a
+//     dot-import;
 //   - over the reference transport, a node with no listener of its own
 //     completes the whole lifecycle — listing, heartbeat, poll, decline,
 //     report, fees — on a fresh outbound connection for every call, and its
@@ -55,7 +57,11 @@ import (
 // no inbound path. It does not prove a given node agent never opens one —
 // Cloudy's cmd/cloudy-agent does not yet run this loop (its agent → coordinator
 // relay is a named next step) — and a real NAT/CGNAT path is a multi-node
-// test (Phase 2), not a loopback one.
+// test (Phase 2), not a loopback one. The address scan is a word list:
+// synonyms ("ReplyTo", "Location") pass it and are left to review. The live
+// lifecycle covers the six compute operations; the reference transport does
+// not yet carry the storage or key-lifecycle surfaces, which are covered by
+// the interface pin only.
 func TestInvariant_SUB_no_inbound_requirement_NodeDialsOut(t *testing.T) {
 	t.Run("SPEC states the pull model", testInboundSpec)
 	t.Run("the coordinator surface is pinned", testInboundSurface)
@@ -84,8 +90,12 @@ func testInboundSpec(t *testing.T) {
 	rows := 0
 	for _, line := range strings.Split(sec, "\n") {
 		cells := strings.Split(line, "|")
-		if len(cells) < 4 || !strings.Contains(cells[1], "`") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "|") || len(cells) < 4 {
 			continue
+		}
+		op := strings.TrimSpace(cells[1])
+		if op == "" || op == "Operation" || strings.Trim(op, "-: ") == "" {
+			continue // header or separator row
 		}
 		rows++
 		dir := strings.TrimSpace(cells[2])
@@ -154,19 +164,41 @@ var addressWords = map[string]bool{
 }
 
 // words splits a Go identifier into lower-case words: "CallbackURL" →
-// [callback url], "GPUMinVRAMMB" → [gpu min vrammb], "JobReport" → [job report].
+// [callback url], "RelayURLs" → [relay urls], "GPUMinVRAMMB" → [gpu min
+// vrammb], "JobReport" → [job report].
 func words(id string) []string {
 	var out []string
 	r := []rune(id)
 	start := 0
 	for i := 1; i <= len(r); i++ {
+		// An acronym's plural ("URLs", "IPs") stays one word.
+		acronymPlural := i+1 < len(r) && r[i+1] == 's' && (i+2 == len(r) || unicode.IsUpper(r[i+2]))
 		if i == len(r) || (unicode.IsUpper(r[i]) && (unicode.IsLower(r[i-1]) ||
-			(i+1 < len(r) && unicode.IsLower(r[i+1]) && unicode.IsUpper(r[i-1])))) {
+			(i+1 < len(r) && unicode.IsLower(r[i+1]) && unicode.IsUpper(r[i-1]) && !acronymPlural))) {
 			out = append(out, strings.ToLower(string(r[start:i])))
 			start = i
 		}
 	}
 	return out
+}
+
+// addressWord reports whether w, or w with a plural ending removed, is an
+// address word: "addrs" and "urls" count, "reports" does not.
+func addressWord(w string) bool {
+	return addressWords[w] || addressWords[strings.TrimSuffix(w, "s")] || addressWords[strings.TrimSuffix(w, "es")]
+}
+
+// addressName returns the first address word in a field name or a json tag
+// name ("callback_url"), or "" if there is none.
+func addressName(name string) string {
+	for _, part := range strings.FieldsFunc(name, func(r rune) bool { return r == '_' || r == '-' || r == '.' }) {
+		for _, w := range words(part) {
+			if addressWord(w) {
+				return w
+			}
+		}
+	}
+	return ""
 }
 
 var netPackages = map[string]bool{"net": true, "net/url": true, "net/netip": true, "net/http": true, "crypto/tls": true}
@@ -190,10 +222,16 @@ func testInboundNoAddress(t *testing.T) {
 			structs++
 			for _, fld := range st.Fields.List {
 				for _, name := range fld.Names {
-					for _, w := range words(name.Name) {
-						if addressWords[w] {
-							t.Errorf("%s: field %s names a dialable address: the coordinator never calls the node, so no message may carry where to reach one", path, name.Name)
-						}
+					if w := addressName(name.Name); w != "" {
+						t.Errorf("%s: field %s names a dialable address (%q): the coordinator never calls the node, so no message may carry where to reach one", path, name.Name, w)
+					}
+				}
+				// The json tag is the name on the reference wire.
+				if fld.Tag != nil {
+					tag, _ := strconv.Unquote(fld.Tag.Value)
+					jsonName := strings.SplitN(reflect.StructTag(tag).Get("json"), ",", 2)[0]
+					if w := addressName(jsonName); w != "" {
+						t.Errorf("%s: json tag %q names a dialable address (%q): the tag is the field's name on the wire", path, jsonName, w)
 					}
 				}
 			}
@@ -212,10 +250,19 @@ var listenCalls = map[string]bool{
 	"ListenUnix": true, "ListenUnixgram": true, "ListenPacket": true,
 	"ListenMulticastUDP": true, "ListenAndServe": true, "ListenAndServeTLS": true,
 	"Serve": true, "ServeTLS": true, "NewServer": true, "NewUnstartedServer": true,
+	// Serving on a socket handed over by the init system (systemd socket
+	// activation) is still accepting inbound connections.
+	"FileListener": true, "FilePacketConn": true,
 }
 
 func testInboundNoListener(t *testing.T) {
 	eachGoFile(t, func(path string, f *ast.File) {
+		// A dot-import would hide Listen from the selector scan below.
+		for _, imp := range f.Imports {
+			if p, _ := strconv.Unquote(imp.Path.Value); imp.Name != nil && imp.Name.Name == "." && (netPackages[p] || strings.HasPrefix(p, "net/")) {
+				t.Errorf("%s dot-imports %s: networking calls must stay visible as %s.<Name> so this audit can see them", path, p, p)
+			}
+		}
 		ast.Inspect(f, func(n ast.Node) bool {
 			sel, ok := n.(*ast.SelectorExpr)
 			if ok && listenCalls[sel.Sel.Name] {
