@@ -111,7 +111,8 @@ func (a *Assignment) Sign(priv ed25519.PrivateKey) {
 // Verify reports whether Signature is a valid coordinator signature over the
 // assignment.
 func (a Assignment) Verify(pub ed25519.PublicKey) bool {
-	return canon.VerifySig(pub, a.CanonicalBytes(), a.Signature)
+	return canon.ValidTime(a.OfferedAt) &&
+		canon.VerifySig(pub, a.CanonicalBytes(), a.Signature)
 }
 
 // CanonicalBytes returns the deterministic signing payload for the decline,
@@ -132,7 +133,8 @@ func (d *Decline) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid node signature over the decline.
 func (d Decline) Verify(pub ed25519.PublicKey) bool {
-	return canon.VerifySig(pub, d.CanonicalBytes(), d.Signature)
+	return canon.ValidTime(d.DeclinedAt) &&
+		canon.VerifySig(pub, d.CanonicalBytes(), d.Signature)
 }
 
 // CanonicalBytes returns the deterministic signing payload for the job report,
@@ -156,5 +158,6 @@ func (r *JobReport) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid node signature over the report.
 func (r JobReport) Verify(pub ed25519.PublicKey) bool {
-	return canon.VerifySig(pub, r.CanonicalBytes(), r.Signature)
+	return canon.ValidTime(r.StartedAt) && canon.ValidTime(r.FinishedAt) &&
+		canon.VerifySig(pub, r.CanonicalBytes(), r.Signature)
 }

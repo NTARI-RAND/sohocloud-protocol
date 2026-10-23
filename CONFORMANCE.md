@@ -26,6 +26,7 @@ This module is the **coordination protocol** of a JFA **substrate**: the depende
 | **Fee legibility** | Fees exist on the wire only as a coordinator-signed `FeeDeclaration` — authored, legible, contestable | `fees/`; golden vectors |
 | **Legibility is an output, not a comment** | `SPEC.md` is normative and a build deliverable: a foreign implementer builds from it without reading this source | `testdata/vectors.json` (ground truth) + `testdata/reproduce_spec.py` (independent reproducer) + `vectors/` golden test — drift between code and committed vectors fails the build |
 | **Canonical, deterministic encoding** | `canon/` length-prefixed, domain-separated signing encoder | golden vectors regenerated-and-compared byte-for-byte on every test run |
+| **Representable timestamps** (SPEC §3) | Every timestamp-bearing message verifier checks `canon.ValidTime` before checking the signature; a signature over incomplete canonical bytes cannot authorize an invalid timestamp | `TestVerifyRejectsUnrepresentableTime`, `TestVerifyRepresentableTimeBoundaries`, and `FuzzMessageVerification` |
 
 ## JFA registry bindings
 
