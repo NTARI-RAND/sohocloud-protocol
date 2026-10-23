@@ -175,7 +175,8 @@ func (l *StorageLease) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid coordinator signature.
 func (l StorageLease) Verify(pub ed25519.PublicKey) bool {
-	return canon.VerifySig(pub, l.CanonicalBytes(), l.Signature)
+	return canon.ValidTime(l.IssuedAt) && canon.ValidTime(l.ExpiresAt) &&
+		canon.VerifySig(pub, l.CanonicalBytes(), l.Signature)
 }
 
 // CanonicalBytes for the decline (SPEC.md §4.8).
@@ -195,7 +196,8 @@ func (d *LeaseDecline) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid node signature.
 func (d LeaseDecline) Verify(pub ed25519.PublicKey) bool {
-	return canon.VerifySig(pub, d.CanonicalBytes(), d.Signature)
+	return canon.ValidTime(d.DeclinedAt) &&
+		canon.VerifySig(pub, d.CanonicalBytes(), d.Signature)
 }
 
 // CanonicalBytes for the release (SPEC.md §4.9).
@@ -214,7 +216,8 @@ func (r *LeaseRelease) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid node signature.
 func (r LeaseRelease) Verify(pub ed25519.PublicKey) bool {
-	return canon.VerifySig(pub, r.CanonicalBytes(), r.Signature)
+	return canon.ValidTime(r.ReleasedAt) &&
+		canon.VerifySig(pub, r.CanonicalBytes(), r.Signature)
 }
 
 // CanonicalBytes for the proof response (SPEC.md §4.10).
@@ -237,5 +240,6 @@ func (p *ProofResponse) Sign(priv ed25519.PrivateKey) {
 
 // Verify reports whether Signature is a valid node signature.
 func (p ProofResponse) Verify(pub ed25519.PublicKey) bool {
-	return canon.VerifySig(pub, p.CanonicalBytes(), p.Signature)
+	return canon.ValidTime(p.RespondedAt) &&
+		canon.VerifySig(pub, p.CanonicalBytes(), p.Signature)
 }

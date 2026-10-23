@@ -1,0 +1,72 @@
+name: Protocol reliability
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reliability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  race:
+    name: Race-enabled protocol tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -race ./...
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: .
+            target: FuzzMessageVerification
+          - package: ./canon
+            target: FuzzVerifySig
+          - package: ./operator
+            target: FuzzOperatorVerification
+          - package: ./transport/httpjson
+            target: FuzzHandlerJSON
+          - package: ./transport/httpjson
+            target: FuzzClientJSON
+    env:
+      FUZZ_TIME: ${{ github.event_name == 'schedule' && '60s' || '10s' }}
+      FUZZ_PACKAGE: ${{ matrix.package }}
+      FUZZ_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Bounded fuzz campaign
+        shell: bash
+        run: |
+          go test "$FUZZ_PACKAGE" -run '^$' -fuzz "^${FUZZ_TARGET}$" \
+            -fuzztime "$FUZZ_TIME" -parallel 2 2>&1 | tee "$RUNNER_TEMP/fuzz-output.log"
+      - name: Preserve failing inputs and log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failure-${{ matrix.target }}
+          path: |
+            testdata/fuzz/**
+            **/testdata/fuzz/**
+            ${{ runner.temp }}/fuzz-output.log
+          if-no-files-found: warn
+          retention-days: 14
