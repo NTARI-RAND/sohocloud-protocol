@@ -68,7 +68,8 @@ func (k *KeyRotation) Sign(priv ed25519.PrivateKey) {
 // malformed key to ed25519.Verify and panic. Validating the successor here is
 // the same discipline the operator rotation path already applies.
 func (k KeyRotation) Verify(currentPub ed25519.PublicKey) bool {
-	return k.Algo == "ed25519" &&
+	return canon.ValidTime(k.RotatedAt) &&
+		k.Algo == "ed25519" &&
 		len(k.NewPublicKey) == ed25519.PublicKeySize &&
 		canon.VerifySig(currentPub, k.CanonicalBytes(), k.Signature)
 }
@@ -102,7 +103,8 @@ func (k *KeyRevocation) Sign(priv ed25519.PrivateKey) {
 // is rejected. A revocation is only ever honored against the key it actually
 // kills.
 func (k KeyRevocation) Verify(trustedPub ed25519.PublicKey) bool {
-	return len(k.RevokedPublicKey) == ed25519.PublicKeySize &&
+	return canon.ValidTime(k.RevokedAt) &&
+		len(k.RevokedPublicKey) == ed25519.PublicKeySize &&
 		bytes.Equal(k.RevokedPublicKey, trustedPub) &&
 		canon.VerifySig(k.RevokedPublicKey, k.CanonicalBytes(), k.Signature)
 }
