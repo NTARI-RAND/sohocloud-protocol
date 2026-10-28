@@ -139,8 +139,8 @@ func (buf *Buffer) Err() error {
 // Sum returns a copy of the accumulated canonical bytes. The caller signs or
 // verifies over exactly these bytes. When Err() is non-nil the returned bytes
 // are incomplete by construction (the offending field was skipped, not
-// wrapped), so any signature over them will fail to verify — callers should
-// check Err() rather than relying on that.
+// wrapped). They can still be signed: verifiers must explicitly reject invalid
+// timestamps rather than trusting a signature over incomplete bytes.
 func (buf *Buffer) Sum() []byte {
 	out := make([]byte, len(buf.b))
 	copy(out, buf.b)
