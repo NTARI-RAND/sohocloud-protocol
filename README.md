@@ -63,6 +63,19 @@ testdata/vectors.json cross-language conformance vectors (normative fixture; see
 - **Stub, not built:** `anchor/` — the witnessed employment-claim layer
   (open problem #6). Labeled as a stand-in; see its package doc.
 
+## Verification
+
+Run the complete suite and the reference transport's concurrent request checks:
+
+```sh
+go test ./...
+go test -race ./transport/httpjson
+python3 testdata/reproduce_spec.py
+```
+
+The concurrent transport test checks every worker's operation, node ID and job
+ID, regardless of completion order, as well as the total fee requests.
+
 ## License
 
 AGPL-3.0-or-later. `SPEC.md` is part of the commons: it exists to be read,
