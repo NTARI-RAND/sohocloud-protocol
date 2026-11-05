@@ -25,33 +25,39 @@ import (
 // concurrent-client test without adding a race in the test double itself.
 type testCoordinator struct {
 	mu       sync.Mutex
+	contexts []context.Context
 	received []any
 	jobs     []employment.Assignment
 	fee      fees.FeeDeclaration
 	err      error
 }
 
-func (c *testCoordinator) record(v any) error {
+func (c *testCoordinator) record(v any, contexts ...context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.received = append(c.received, v)
+	if len(contexts) > 0 {
+		c.contexts = append(c.contexts, contexts[0])
+	}
 	return c.err
 }
-func (c *testCoordinator) SubmitListing(_ context.Context, v listing.CapabilityListing) error {
-	return c.record(v)
+func (c *testCoordinator) SubmitListing(ctx context.Context, v listing.CapabilityListing) error {
+	return c.record(v, ctx)
 }
-func (c *testCoordinator) Heartbeat(_ context.Context, v liveness.Heartbeat) error {
-	return c.record(v)
+func (c *testCoordinator) Heartbeat(ctx context.Context, v liveness.Heartbeat) error {
+	return c.record(v, ctx)
 }
-func (c *testCoordinator) Decline(_ context.Context, v employment.Decline) error { return c.record(v) }
-func (c *testCoordinator) ReportJob(_ context.Context, v employment.JobReport) error {
-	return c.record(v)
+func (c *testCoordinator) Decline(ctx context.Context, v employment.Decline) error {
+	return c.record(v, ctx)
 }
-func (c *testCoordinator) PollJobs(_ context.Context, id identity.NodeID) ([]employment.Assignment, error) {
-	return c.jobs, c.record(id)
+func (c *testCoordinator) ReportJob(ctx context.Context, v employment.JobReport) error {
+	return c.record(v, ctx)
 }
-func (c *testCoordinator) Fees(context.Context) (fees.FeeDeclaration, error) {
-	return c.fee, c.record("fees")
+func (c *testCoordinator) PollJobs(ctx context.Context, id identity.NodeID) ([]employment.Assignment, error) {
+	return c.jobs, c.record(id, ctx)
+}
+func (c *testCoordinator) Fees(ctx context.Context) (fees.FeeDeclaration, error) {
+	return c.fee, c.record("fees", ctx)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
