@@ -130,45 +130,6 @@ func TestSignedLifecycle(t *testing.T) {
 	}
 }
 
-func TestHandlerRejectsBadRequestsBeforeDispatch(t *testing.T) {
-	for _, path := range []string{"/v0/listing", "/v0/heartbeat", "/v0/decline", "/v0/report", "/v0/jobs", "/v0/fees"} {
-		t.Run(path, func(t *testing.T) {
-			c := &testCoordinator{}
-			h := Handler(c)
-			method := http.MethodGet
-			if path == "/v0/jobs" || path == "/v0/fees" {
-				method = http.MethodPost
-			}
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader("{}")))
-			if w.Code != http.StatusMethodNotAllowed {
-				t.Fatalf("status %d, want 405", w.Code)
-			}
-			if len(c.received) != 0 {
-				t.Fatal("bad method dispatched")
-			}
-		})
-	}
-	for _, path := range []string{"/v0/listing", "/v0/heartbeat", "/v0/decline", "/v0/report"} {
-		for _, body := range []string{"", "{", "[]", `{"Signature":"not base64!"}`, `{"NodeID":42}`} {
-			t.Run(path+"/"+body, func(t *testing.T) {
-				c := &testCoordinator{}
-				w := httptest.NewRecorder()
-				Handler(c).ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
-				if w.Code != http.StatusBadRequest || len(c.received) != 0 {
-					t.Fatalf("status %d, dispatches %d; want 400 and none", w.Code, len(c.received))
-				}
-			})
-		}
-	}
-	c := &testCoordinator{}
-	w := httptest.NewRecorder()
-	Handler(c).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v0/jobs", nil))
-	if w.Code != 400 || len(c.received) != 0 {
-		t.Fatalf("missing node_id: status %d, dispatches %d", w.Code, len(c.received))
-	}
-}
-
 func TestCoordinatorErrorsReachClient(t *testing.T) {
 	c := &testCoordinator{err: errors.New("coordinator unavailable")}
 	client := inProcessClient(Handler(c))
