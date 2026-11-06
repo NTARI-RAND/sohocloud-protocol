@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: reliability-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   race:
@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -51,10 +53,13 @@ jobs:
       FUZZ_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Bounded fuzz campaign
+        timeout-minutes: 10
         shell: bash
         run: |
           go test "$FUZZ_PACKAGE" -run '^$' -fuzz "^${FUZZ_TARGET}$" \

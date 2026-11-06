@@ -47,38 +47,27 @@ recorders/transports, so each iteration needs no listener or remote service.
   output; both valid int64-nanosecond endpoints still verify (SPEC §3).
 - Fuzz targets exercise both JSON decode paths, panic-safe signature verification,
   all twelve timestamp-bearing message families, and all three operator families.
+  Beyond its signed seeds, `FuzzOperatorVerification` primarily checks panic
+  safety: random mutations are not expected to produce valid Ed25519 signatures.
+  On successful HTTP responses, `FuzzClientJSON` checks body closure, not the
+  decoded payload's correctness.
   Operator replay state and key-registration policy remain coordinator concerns.
 - Existing golden-vector comparison, independent Python reproduction,
-  dependency-leaf audit, and JFA invariant bindings remain mandatory.
+  dependency-leaf audit, and JFA invariant bindings continue to run in
+  `.github/workflows/ci.yml` and `.github/workflows/dependency-leaf.yml`.
 
 `.github/workflows/reliability.yml` runs race checks and five 10-second fuzz jobs
 on PRs and pushes to `main`. Its daily schedule runs each target for 60 seconds;
 manual runs use 10 seconds. Scheduled execution begins after this workflow lands
 on the default branch. Existing build/vet/test and Python CI jobs remain intact.
 
-A failed fuzz job uploads its log and any `testdata/fuzz` inputs for 14 days.
+The fuzz step has a 10-minute timeout within the 15-minute job budget, leaving
+time for the failure upload. If the step fails or times out, the workflow
+attempts to retain its log and any `testdata/fuzz` inputs for 14 days. Cancellation
+or runner loss can still prevent an upload. Only PR runs cancel in-progress runs;
+push, scheduled and manual runs let the current run finish.
 Reproduce a failure with the package/seed command printed by Go, add a focused
 regression assertion, and commit the confirmed failing input alongside its fix.
 Fuzzing is bounded evidence, not an exhaustive proof. Hosted CI and branch
 protection configuration require maintainer review; the new job names do not
 become required status checks automatically.
-
-## Bug-Build-Test report draft
-
-**Bug:** Timestamp-bearing message verifiers accepted unrepresentable instants.
-
-**Reproduction:** On the parent implementation, run
-`go test . -run '^TestVerifyRejectsUnrepresentableTime$' -count=1` with the added
-regression test. All twelve signed message families accept an invalid time when
-its incomplete canonical bytes carry a valid signature.
-
-**Expected:** SPEC §3 requires rejection of an instant outside int64 UTC Unix
-nanoseconds, including the Go zero time.
-
-**Fix and evidence:** Each affected `Verify` method checks `canon.ValidTime`
-before signature verification. The regression fails before the fix and passes
-after it; valid endpoint timestamps and the unchanged golden vectors pass.
-No message fields, domain tags, public signatures, or valid canonical bytes change.
-
-This draft is ready to copy into the NTARI Bug-Build-Test workflow. No Slack
-receipt was submitted and no existing ticket is claimed closed.
