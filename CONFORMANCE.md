@@ -52,6 +52,24 @@ Named per the architecture's honesty rule: a worked example that concealed where
 
 Depends on: the Go standard library. Nothing else — no other NTARI module, no third-party module, nothing above or beside it in the stack. The CI check makes a violation a failed build rather than a review catch.
 
+## Reference response transport binding
+
+SPEC §7.1 binds successful JSON responses to exactly one complete document.
+`transport/httpjson/client.go` enforces EOF and discards partial results;
+`TestClientCompleteResponse`, `TestClientDoesNotReturnPartialResponse`, and
+`TestClientResponseVectors` check it. `MaxResponseBytes` is a local opt-in
+success-body budget, not a network-wide admission or job-count rule.
+`TestClientSuccessBudget`, `TestClientOverflowBeforeDecoding`,
+`TestClientResponseReadFailure`, `TestClientChunkedSignedResponse`, and
+`TestClientCancellationWhileReadingResponse` cover bounded reads, cleanup,
+signature preservation, and cancellation. `vectors/reproduce_responses.py`
+independently checks the shared transport fixtures. Existing canonical signing
+vectors are regenerated unchanged and remain independently reproducible.
+
+The proposed module release is **v0.4.0**. It is not published by this change;
+consumer dependency updates and clean tagged-module verification remain release
+gates. Signed message domains remain `v0`; no canonical field or signature changes.
+
 ## Product-specific notes (last, per the ordering rule)
 
 SoHoLINK is the reference coordinator; Cloudy is a reference frontend. Both consume this module by published version tag. Neither is privileged by the protocol: any conformant implementation may replace either.
