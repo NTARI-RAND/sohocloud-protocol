@@ -55,5 +55,6 @@ func (f *FeeDeclaration) Sign(priv ed25519.PrivateKey) {
 // Verify reports whether Signature is a valid coordinator signature over the
 // declaration.
 func (f FeeDeclaration) Verify(pub ed25519.PublicKey) bool {
-	return canon.VerifySig(pub, f.CanonicalBytes(), f.Signature)
+	return canon.ValidTime(f.EffectiveAt) &&
+		canon.VerifySig(pub, f.CanonicalBytes(), f.Signature)
 }

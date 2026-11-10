@@ -139,5 +139,6 @@ func (l *CapabilityListing) Sign(priv ed25519.PrivateKey) {
 // pub is the node's public key, resolved out-of-band by the coordinator; the
 // protocol does not distribute keys.
 func (l CapabilityListing) Verify(pub ed25519.PublicKey) bool {
-	return canon.VerifySig(pub, l.CanonicalBytes(), l.Signature)
+	return canon.ValidTime(l.IssuedAt) &&
+		canon.VerifySig(pub, l.CanonicalBytes(), l.Signature)
 }
