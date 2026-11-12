@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,7 +34,12 @@ import (
 type Client struct {
 	BaseURL string
 	HTTP    *http.Client
+	// MaxResponseBytes bounds successful bodies; zero leaves size unbounded.
+	MaxResponseBytes int64
 }
+
+// ErrResponseTooLarge identifies a successful body exceeding the local byte budget.
+var ErrResponseTooLarge = errors.New("sohocloud: successful response exceeds byte budget")
 
 // compile-time assertion that Client satisfies the interface.
 var _ coordinator.Coordinator = (*Client)(nil)
@@ -67,6 +73,9 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 }
 
 func (c *Client) do(req *http.Request, out any) error {
+	if c.MaxResponseBytes < 0 {
+		return fmt.Errorf("sohocloud: MaxResponseBytes must be non-negative")
+	}
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
 		return err
@@ -76,10 +85,55 @@ func (c *Client) do(req *http.Request, out any) error {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("sohocloud: %s %s: status %d: %s", req.Method, req.URL.Path, resp.StatusCode, string(msg))
 	}
+	return decodeSuccess(resp, out, c.MaxResponseBytes)
+}
+
+func decodeSuccess(resp *http.Response, out any, limit int64) error {
+	var reader io.Reader = resp.Body
+	if limit > 0 {
+		data, err := readSuccessBody(resp, limit)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(data)
+	}
 	if out == nil {
 		return nil
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return decodeDocument(reader, out)
+}
+
+func decodeDocument(reader io.Reader, out any) error {
+	decoder := json.NewDecoder(reader)
+	if err := decoder.Decode(out); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("sohocloud: trailing response JSON")
+	}
+	return nil
+}
+
+func readSuccessBody(resp *http.Response, limit int64) ([]byte, error) {
+	if resp.ContentLength > limit {
+		return nil, ErrResponseTooLarge
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit))
+	if err != nil {
+		return nil, err
+	}
+	var extra [1]byte
+	n, err := io.ReadFull(resp.Body, extra[:])
+	if n > 0 {
+		return nil, ErrResponseTooLarge
+	}
+	if err != io.EOF {
+		return nil, err
+	}
+	return data, nil
 }
 
 // SubmitListing posts a signed capability listing.
@@ -96,7 +150,10 @@ func (c *Client) Heartbeat(ctx context.Context, h liveness.Heartbeat) error {
 func (c *Client) PollJobs(ctx context.Context, id identity.NodeID) ([]employment.Assignment, error) {
 	var out []employment.Assignment
 	err := c.getJSON(ctx, "/v0/jobs?node_id="+url.QueryEscape(string(id)), &out)
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Decline posts a signed refusal of an assignment.
@@ -113,5 +170,8 @@ func (c *Client) ReportJob(ctx context.Context, r employment.JobReport) error {
 func (c *Client) Fees(ctx context.Context) (fees.FeeDeclaration, error) {
 	var out fees.FeeDeclaration
 	err := c.getJSON(ctx, "/v0/fees", &out)
-	return out, err
+	if err != nil {
+		return fees.FeeDeclaration{}, err
+	}
+	return out, nil
 }
