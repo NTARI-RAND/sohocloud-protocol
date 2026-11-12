@@ -14,6 +14,8 @@ import (
 	"github.com/NTARI-RAND/sohocloud-protocol/transport/httpjson"
 )
 
+const coordinatorTestURL = "https://coordinator.example.test"
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -47,7 +49,7 @@ func TestClientResponses(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			body := &trackedBody{Reader: strings.NewReader(tt.body)}
 			client := &httpjson.Client{
-				BaseURL: "https://coordinator.example.test",
+				BaseURL: coordinatorTestURL,
 				HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					return &http.Response{StatusCode: tt.status, Body: body, Header: make(http.Header)}, nil
 				})},
@@ -98,7 +100,7 @@ func TestClientRequestFailures(t *testing.T) {
 	for _, method := range []string{"listing", "jobs", "fees"} {
 		t.Run(method, func(t *testing.T) {
 			client := &httpjson.Client{
-				BaseURL: "https://coordinator.example.test",
+				BaseURL: coordinatorTestURL,
 				HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					return nil, transportError
 				})},
@@ -116,7 +118,7 @@ func TestClientPropagatesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	client := &httpjson.Client{
-		BaseURL: "https://coordinator.example.test",
+		BaseURL: coordinatorTestURL,
 		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return nil, r.Context().Err()
 		})},
@@ -132,7 +134,7 @@ func TestClientPropagatesCancellation(t *testing.T) {
 
 func TestClientRejectsUnencodableTimestamp(t *testing.T) {
 	client := &httpjson.Client{
-		BaseURL: "https://coordinator.example.test",
+		BaseURL: coordinatorTestURL,
 		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			t.Error("unencodable listing reached transport")
 			return nil, errors.New("unexpected request")

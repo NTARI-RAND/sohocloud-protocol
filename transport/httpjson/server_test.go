@@ -154,21 +154,13 @@ func TestHandlerRejectsInvalidRequests(t *testing.T) {
 		tests = append(tests, requestCase{route + " method", http.MethodDelete, "/v0/" + route, "{}", "method not allowed", http.StatusMethodNotAllowed})
 	}
 	for _, route := range []string{"listing", "heartbeat", "decline", "report"} {
-		for _, body := range []string{"", "{", "[]", `{"Signature":"!"}`} {
+		for _, body := range []string{"", "{", "[]", `{"Signature":"!"}`, `{"NodeID":42}`} {
 			tests = append(tests, requestCase{route + " body " + body, http.MethodPost, "/v0/" + route, body, "bad json:", http.StatusBadRequest})
 		}
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			coordinator := &recordingCoordinator{}
-			response := httptest.NewRecorder()
-			httpjson.Handler(coordinator).ServeHTTP(response, httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body)))
-			if response.Code != tt.status || !strings.Contains(response.Body.String(), tt.message) {
-				t.Fatalf("response = %d %q; want %d containing %q", response.Code, response.Body.String(), tt.status, tt.message)
-			}
-			if coordinator.calls != 0 {
-				t.Fatalf("invalid request reached coordinator %d times", coordinator.calls)
-			}
+			assertRejectedRequest(t, tt.method, tt.path, tt.body, tt.message, tt.status)
 		})
 	}
 }
@@ -176,13 +168,7 @@ func TestHandlerRejectsInvalidRequests(t *testing.T) {
 func TestHandlerReturnsCoordinatorErrors(t *testing.T) {
 	for _, route := range []string{"listing", "heartbeat", "decline", "report", "jobs", "fees"} {
 		t.Run(route, func(t *testing.T) {
-			method, path := http.MethodPost, "/v0/"+route
-			if route == "jobs" || route == "fees" {
-				method = http.MethodGet
-			}
-			if route == "jobs" {
-				path += "?node_id=node-1"
-			}
+			method, path := coordinatorErrorRequest(route)
 			coordinator := &recordingCoordinator{err: errors.New("coordinator unavailable")}
 			response := httptest.NewRecorder()
 			httpjson.Handler(coordinator).ServeHTTP(response, httptest.NewRequest(method, path, strings.NewReader("{}")))
@@ -194,4 +180,28 @@ func TestHandlerReturnsCoordinatorErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func assertRejectedRequest(t *testing.T, method, path, body, message string, status int) {
+	t.Helper()
+	coordinator := &recordingCoordinator{}
+	response := httptest.NewRecorder()
+	httpjson.Handler(coordinator).ServeHTTP(response, httptest.NewRequest(method, path, strings.NewReader(body)))
+	if response.Code != status || !strings.Contains(response.Body.String(), message) {
+		t.Fatalf("response = %d %q; want %d containing %q", response.Code, response.Body.String(), status, message)
+	}
+	if coordinator.calls != 0 {
+		t.Fatalf("invalid request reached coordinator %d times", coordinator.calls)
+	}
+}
+
+func coordinatorErrorRequest(route string) (string, string) {
+	method, path := http.MethodPost, "/v0/"+route
+	if route == "jobs" || route == "fees" {
+		method = http.MethodGet
+	}
+	if route == "jobs" {
+		path += "?node_id=node-1"
+	}
+	return method, path
 }
