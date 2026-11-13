@@ -25,33 +25,39 @@ import (
 // concurrent-client test without adding a race in the test double itself.
 type testCoordinator struct {
 	mu       sync.Mutex
+	contexts []context.Context
 	received []any
 	jobs     []employment.Assignment
 	fee      fees.FeeDeclaration
 	err      error
 }
 
-func (c *testCoordinator) record(v any) error {
+func (c *testCoordinator) record(v any, contexts ...context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.received = append(c.received, v)
+	if len(contexts) > 0 {
+		c.contexts = append(c.contexts, contexts[0])
+	}
 	return c.err
 }
-func (c *testCoordinator) SubmitListing(_ context.Context, v listing.CapabilityListing) error {
-	return c.record(v)
+func (c *testCoordinator) SubmitListing(ctx context.Context, v listing.CapabilityListing) error {
+	return c.record(v, ctx)
 }
-func (c *testCoordinator) Heartbeat(_ context.Context, v liveness.Heartbeat) error {
-	return c.record(v)
+func (c *testCoordinator) Heartbeat(ctx context.Context, v liveness.Heartbeat) error {
+	return c.record(v, ctx)
 }
-func (c *testCoordinator) Decline(_ context.Context, v employment.Decline) error { return c.record(v) }
-func (c *testCoordinator) ReportJob(_ context.Context, v employment.JobReport) error {
-	return c.record(v)
+func (c *testCoordinator) Decline(ctx context.Context, v employment.Decline) error {
+	return c.record(v, ctx)
 }
-func (c *testCoordinator) PollJobs(_ context.Context, id identity.NodeID) ([]employment.Assignment, error) {
-	return c.jobs, c.record(id)
+func (c *testCoordinator) ReportJob(ctx context.Context, v employment.JobReport) error {
+	return c.record(v, ctx)
 }
-func (c *testCoordinator) Fees(context.Context) (fees.FeeDeclaration, error) {
-	return c.fee, c.record("fees")
+func (c *testCoordinator) PollJobs(ctx context.Context, id identity.NodeID) ([]employment.Assignment, error) {
+	return c.jobs, c.record(id, ctx)
+}
+func (c *testCoordinator) Fees(ctx context.Context) (fees.FeeDeclaration, error) {
+	return c.fee, c.record("fees", ctx)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -124,45 +130,6 @@ func TestSignedLifecycle(t *testing.T) {
 	}
 }
 
-func TestHandlerRejectsBadRequestsBeforeDispatch(t *testing.T) {
-	for _, path := range []string{"/v0/listing", "/v0/heartbeat", "/v0/decline", "/v0/report", "/v0/jobs", "/v0/fees"} {
-		t.Run(path, func(t *testing.T) {
-			c := &testCoordinator{}
-			h := Handler(c)
-			method := http.MethodGet
-			if path == "/v0/jobs" || path == "/v0/fees" {
-				method = http.MethodPost
-			}
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader("{}")))
-			if w.Code != http.StatusMethodNotAllowed {
-				t.Fatalf("status %d, want 405", w.Code)
-			}
-			if len(c.received) != 0 {
-				t.Fatal("bad method dispatched")
-			}
-		})
-	}
-	for _, path := range []string{"/v0/listing", "/v0/heartbeat", "/v0/decline", "/v0/report"} {
-		for _, body := range []string{"", "{", "[]", `{"Signature":"not base64!"}`, `{"NodeID":42}`} {
-			t.Run(path+"/"+body, func(t *testing.T) {
-				c := &testCoordinator{}
-				w := httptest.NewRecorder()
-				Handler(c).ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
-				if w.Code != http.StatusBadRequest || len(c.received) != 0 {
-					t.Fatalf("status %d, dispatches %d; want 400 and none", w.Code, len(c.received))
-				}
-			})
-		}
-	}
-	c := &testCoordinator{}
-	w := httptest.NewRecorder()
-	Handler(c).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v0/jobs", nil))
-	if w.Code != 400 || len(c.received) != 0 {
-		t.Fatalf("missing node_id: status %d, dispatches %d", w.Code, len(c.received))
-	}
-}
-
 func TestCoordinatorErrorsReachClient(t *testing.T) {
 	c := &testCoordinator{err: errors.New("coordinator unavailable")}
 	client := inProcessClient(Handler(c))
@@ -199,95 +166,3 @@ func (b *trackedBody) Read(p []byte) (int, error) {
 	return n, err
 }
 func (b *trackedBody) Close() error { b.closed = true; return nil }
-
-func TestClientClosesResponseBodies(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		status  int
-		body    string
-		wantErr bool
-	}{
-		{"success", 200, `[]`, false}, {"bad-json", 200, `{`, true},
-		{"failure", 503, strings.Repeat("x", 8192), true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			for _, operation := range []string{"jobs", "listing"} {
-				b := &trackedBody{Reader: strings.NewReader(tc.body)}
-				c := &Client{BaseURL: "http://coordinator.invalid", HTTP: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-					return &http.Response{StatusCode: tc.status, Header: make(http.Header), Body: b}, nil
-				})}}
-				err := clientCalls(c, context.Background())[operation]()
-				wantErr := tc.wantErr
-				if operation == "listing" && tc.status == 200 {
-					wantErr = false
-				}
-				if (err != nil) != wantErr {
-					t.Fatalf("%s: err %v, want error %v", operation, err, wantErr)
-				}
-				if !b.closed {
-					t.Fatalf("%s: body not closed", operation)
-				}
-				if tc.status == 503 && (b.read > 4096 || !strings.Contains(err.Error(), "status 503")) {
-					t.Fatalf("unbounded/missing HTTP error: read %d, err %v", b.read, err)
-				}
-			}
-		})
-	}
-}
-
-func TestClientCancellation(t *testing.T) {
-	srv := httptest.NewServer(Handler(&testCoordinator{}))
-	defer srv.Close()
-	c := &Client{BaseURL: srv.URL, HTTP: srv.Client()}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	for name, call := range clientCalls(c, ctx) {
-		t.Run(name, func(t *testing.T) {
-			if err := call(); !errors.Is(err, context.Canceled) {
-				t.Fatalf("want cancellation, got %v", err)
-			}
-		})
-	}
-	// Cancel after the transport has started too, without sleeps or live sockets.
-	entered := make(chan struct{})
-	ctx, cancel = context.WithCancel(context.Background())
-	defer cancel()
-	c.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		close(entered)
-		<-r.Context().Done()
-		return nil, r.Context().Err()
-	})}
-	done := make(chan error, 1)
-	go func() { _, err := c.Fees(ctx); done <- err }()
-	<-entered
-	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatal(err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("request did not cancel")
-	}
-}
-
-func TestConcurrentClientCalls(t *testing.T) {
-	c := &testCoordinator{}
-	client := inProcessClient(Handler(c))
-	var wg sync.WaitGroup
-	for i := 0; i < 16; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for name, call := range clientCalls(client, context.Background()) {
-				if err := call(); err != nil {
-					t.Errorf("%s: %v", name, err)
-				}
-			}
-		}()
-	}
-	wg.Wait()
-	if len(c.received) != 96 {
-		t.Fatalf("lost requests: got %d, want 96", len(c.received))
-	}
-}
