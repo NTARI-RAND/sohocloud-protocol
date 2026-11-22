@@ -1,0 +1,107 @@
+[
+  {
+    "name": "jobs empty",
+    "method": "jobs",
+    "body": "[]",
+    "limit": 0,
+    "accept": true
+  },
+  {
+    "name": "jobs exact",
+    "method": "jobs",
+    "body": "[]",
+    "limit": 2,
+    "accept": true
+  },
+  {
+    "name": "jobs overflow",
+    "method": "jobs",
+    "body": "[] ",
+    "limit": 2,
+    "accept": false
+  },
+  {
+    "name": "jobs whitespace",
+    "method": "jobs",
+    "body": "[] \t\r\n",
+    "limit": 6,
+    "accept": true
+  },
+  {
+    "name": "jobs second value",
+    "method": "jobs",
+    "body": "[] {}",
+    "limit": 0,
+    "accept": false
+  },
+  {
+    "name": "jobs junk",
+    "method": "jobs",
+    "body": "[] junk",
+    "limit": 0,
+    "accept": false
+  },
+  {
+    "name": "jobs non JSON whitespace",
+    "method": "jobs",
+    "body": "[]\u000b",
+    "limit": 0,
+    "accept": false
+  },
+  {
+    "name": "empty",
+    "method": "jobs",
+    "body": "",
+    "limit": 0,
+    "accept": false
+  },
+  {
+    "name": "truncated",
+    "method": "jobs",
+    "body": "[",
+    "limit": 0,
+    "accept": false
+  },
+  {
+    "name": "fees object",
+    "method": "fees",
+    "body": "{}",
+    "limit": 2,
+    "accept": true
+  },
+  {
+    "name": "fees unknown field",
+    "method": "fees",
+    "body": "{\"future\":1}",
+    "limit": 0,
+    "accept": true
+  },
+  {
+    "name": "fees second value",
+    "method": "fees",
+    "body": "{} null",
+    "limit": 0,
+    "accept": false
+  },
+  {
+    "name": "fees junk",
+    "method": "fees",
+    "body": "{}x",
+    "limit": 0,
+    "accept": false
+  },
+  {
+    "name": "non JSON NaN",
+    "method": "jobs",
+    "body": "[NaN]",
+    "limit": 0,
+    "accept": false
+  },
+  {
+    "name": "non JSON Infinity",
+    "method": "jobs",
+    "body": "[Infinity]",
+    "limit": 0,
+    "accept": false
+  }
+]

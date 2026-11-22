@@ -401,6 +401,36 @@ GET  /v0/fees                                   -> 200 FeeDeclaration
 SPIFFE binding (§2) is applied by middleware in front of the handler; the
 reference handler wires routes and JSON only and is not the authenticator.
 
+### 7.1 Successful response framing and local byte budgets
+
+For responses decoded as JSON (`PollJobs` and `Fees`), the reference client
+MUST accept exactly one complete JSON value followed only by JSON whitespace
+(space, tab, carriage return, line feed) and EOF. It MUST reject a second value,
+trailing junk, an empty body, or a read failure, without returning a partial
+result. Unknown object fields remain accepted. The declared JSON shapes above
+and canonical signing bytes are unchanged. Successful no-content operations
+continue to ignore response content unless a byte budget is configured.
+
+`httpjson.Client.MaxResponseBytes` is an optional local success-body byte budget:
+zero preserves unbounded response size; a positive value bounds every successful
+response, including ignored content from no-content operations. A negative value
+MUST fail before sending a request. This is not a consensus-wide size or job-count
+maximum. Deployments choose a budget appropriate to their workloads.
+
+With a positive budget, the client MUST detect overflow before JSON decoding,
+including extra bytes after a valid value and unknown-length/chunked bodies.
+It MUST read no more than the budget plus one detection byte at the application
+body boundary, and MUST reject a declared Content-Length exceeding the budget
+without reading the body. Read failures MUST fail the operation. The body MUST
+close on every response path; request-context cancellation remains effective.
+A size failure does not establish whether a coordinator applied a prior request,
+so the client adds no retries. The existing 4096-byte diagnostic limit for
+non-success responses is unchanged.
+
+Strict framing changes response acceptance for every caller, including callers
+using the zero-value budget. Rollout requires a new published module tag and
+coordinated Cloudy/SoHoLINK consumer updates; existing tags remain immutable.
+
 ---
 
 ## 8. Open problems this protocol touches
