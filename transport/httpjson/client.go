@@ -104,7 +104,7 @@ func decodeSuccess(resp *http.Response, out any, limit int64) error {
 }
 
 func decodeDocument(reader io.Reader, out any) error {
-	decoder := json.NewDecoder(reader)
+	decoder := json.NewDecoder(&responseReader{Reader: reader})
 	if err := decoder.Decode(out); err != nil {
 		return err
 	}
@@ -115,6 +115,22 @@ func decodeDocument(reader io.Reader, out any) error {
 		return fmt.Errorf("sohocloud: trailing response JSON")
 	}
 	return nil
+}
+
+// A decoder can consume a complete value without reporting an error returned
+// alongside its final bytes. Keep that error available for the trailing read.
+type responseReader struct {
+	io.Reader
+	err error
+}
+
+func (r *responseReader) Read(p []byte) (int, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
+	n, err := r.Reader.Read(p)
+	r.err = err
+	return n, err
 }
 
 func readSuccessBody(resp *http.Response, limit int64) ([]byte, error) {

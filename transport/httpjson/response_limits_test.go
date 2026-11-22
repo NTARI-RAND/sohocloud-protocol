@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/NTARI-RAND/sohocloud-protocol/transport/httpjson"
 )
@@ -75,6 +76,41 @@ func TestClientResponseReadFailure(t *testing.T) {
 		if !errors.Is(err, failure) || jobs != nil || !body.closed {
 			t.Fatalf("jobs=%v err=%v closed=%v", jobs, err, body.closed)
 		}
+	}
+}
+
+func TestClientResponseErrorWithFinalJSONBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		exactLimit bool
+	}{
+		{name: "unlimited"},
+		{name: "exact budget", exactLimit: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clientFor := func(value string) (*httpjson.Client, *trackedBody) {
+				// Return complete JSON and a one-time read error together, then EOF.
+				reader := iotest.DataErrReader(iotest.TimeoutReader(strings.NewReader(value)))
+				body := &trackedBody{Reader: reader}
+				client := responseClient(body, -1)
+				if tc.exactLimit {
+					client.MaxResponseBytes = int64(len(value))
+				}
+				return client, body
+			}
+
+			client, body := clientFor(`[{"JobID":"job"}]`)
+			jobs, err := client.PollJobs(context.Background(), "node")
+			if !errors.Is(err, iotest.ErrTimeout) || jobs != nil || !body.closed {
+				t.Errorf("PollJobs: jobs=%v err=%v closed=%v", jobs, err, body.closed)
+			}
+
+			client, body = clientFor(`{"Seq":7}`)
+			fee, err := client.Fees(context.Background())
+			if !errors.Is(err, iotest.ErrTimeout) || fee.Seq != 0 || !body.closed {
+				t.Errorf("Fees: fee=%v err=%v closed=%v", fee, err, body.closed)
+			}
+		})
 	}
 }
 
