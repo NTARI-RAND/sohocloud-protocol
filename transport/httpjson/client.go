@@ -29,7 +29,8 @@ import (
 
 // Client is a coordinator.Coordinator that talks to a coordinator's HTTP+JSON
 // endpoint. BaseURL is the coordinator root (no trailing slash). HTTP is
-// optional; http.DefaultClient is used when nil.
+// optional; http.DefaultClient is used when nil. Non-2xx responses return a
+// pointer to an [HTTPStatusError].
 type Client struct {
 	BaseURL string
 	HTTP    *http.Client
@@ -74,7 +75,10 @@ func (c *Client) do(req *http.Request, out any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("sohocloud: %s %s: status %d: %s", req.Method, req.URL.Path, resp.StatusCode, string(msg))
+		return &HTTPStatusError{
+			statusCode: resp.StatusCode,
+			message:    fmt.Sprintf("sohocloud: %s %s: status %d: %s", req.Method, req.URL.Path, resp.StatusCode, string(msg)),
+		}
 	}
 	if out == nil {
 		return nil
