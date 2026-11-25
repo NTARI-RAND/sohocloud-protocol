@@ -21,6 +21,7 @@ try:
 except (AttributeError, ValueError):
     pass
 
+import argparse
 import json
 import os
 import hashlib
@@ -510,18 +511,33 @@ def main():
     with open(os.path.join(here, "vectors.json"), encoding="utf-8") as fh:
         v = json.load(fh)
 
+    messages = v["messages"]
+    op_msgs = v.get("operator_messages", [])
+    parser = argparse.ArgumentParser(description="Reproduce the protocol golden vectors.")
+    parser.add_argument(
+        "--message",
+        choices=sorted({case["name"] for case in messages + op_msgs}),
+        help="check the canonical bytes and signatures for one named message",
+    )
+    args = parser.parse_args()
+    if args.message is not None:
+        messages = [case for case in messages if case["name"] == args.message]
+        op_msgs = [case for case in op_msgs if case["name"] == args.message]
+
     all_ok = True
     total = 0
 
-    print("=== PRIMITIVES ===")
-    for label, ok, got, want in check_primitives(v["primitives"]):
-        total += 1
-        if not ok:
-            all_ok = False
-        print(f"[{'OK' if ok else 'FAIL'}] {label:40s} got={got} want={want}")
+    if args.message is None:
+        print("=== PRIMITIVES ===")
+        for label, ok, got, want in check_primitives(v["primitives"]):
+            total += 1
+            if not ok:
+                all_ok = False
+            print(f"[{'OK' if ok else 'FAIL'}] {label:40s} got={got} want={want}")
 
-    print("\n=== MESSAGES (canonical bytes) ===")
-    for m in v["messages"]:
+    if args.message is None or messages:
+        print("\n=== MESSAGES (canonical bytes) ===")
+    for m in messages:
         name = m["name"]
         total += 1
         f = prepare_fields(name, m["fields"])
@@ -535,8 +551,9 @@ def main():
             print(f"    got : {got}")
             print(f"    want: {want}")
 
-    print("\n=== SIGNATURES (ed25519 over independently-derived bytes) ===")
-    for m in v["messages"]:
+    if args.message is None or messages:
+        print("\n=== SIGNATURES (ed25519 over independently-derived bytes) ===")
+    for m in messages:
         name = m["name"]
         f = prepare_fields(name, m["fields"])
         canon = ENCODERS[name](f)
@@ -549,7 +566,6 @@ def main():
         print(f"[{'OK' if ok else 'FAIL'}] {name} sig verifies over derived bytes")
 
     # ---- Layer-C operator messages (2-of-7, two signatures each) ----
-    op_msgs = v.get("operator_messages", [])
     if op_msgs:
         print("\n=== OPERATOR MESSAGES (canonical bytes) ===")
         for m in op_msgs:

@@ -76,6 +76,16 @@ python3 testdata/reproduce_spec.py
 The concurrent transport test checks every worker's operation, node ID and job
 ID, regardless of completion order, as well as the total fee requests.
 
+To check the canonical bytes and signatures for one named message, run:
+
+```sh
+python3 testdata/reproduce_spec.py --message FeeDeclaration
+```
+
+Use `--help` to list selectable names, including operator messages. The selected
+run reports its own check count and exits nonzero on a mismatch. Omit
+`--message` to run the full fixture.
+
 ## License
 
 AGPL-3.0-or-later. `SPEC.md` is part of the commons: it exists to be read,
