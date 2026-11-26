@@ -2,6 +2,7 @@ package listing
 
 import (
 	"crypto/ed25519"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -80,5 +81,31 @@ func TestWrongKeyRejected(t *testing.T) {
 	l.Sign(priv)
 	if l.Verify(other) {
 		t.Fatal("signature verified under the wrong public key")
+	}
+}
+
+var benchmarkListingBytes []byte
+
+func BenchmarkCanonicalListing(b *testing.B) {
+	for _, devices := range []int{0, 1, 8, 64} {
+		b.Run(strconv.Itoa(devices)+"-pairs", func(b *testing.B) {
+			listing := CapabilityListing{
+				NodeID:   "node-1",
+				Class:    ClassStandard,
+				Printers: make([]PrinterCapability, devices),
+				GPUs:     make([]GPUCapability, devices),
+				IssuedAt: time.Unix(1_700_000_000, 0),
+				Seq:      7,
+			}
+			for i := range listing.Printers {
+				listing.Printers[i] = PrinterCapability{Kind: Printer3D, Model: "Prusa MK4"}
+				listing.GPUs[i] = GPUCapability{API: GPUVulkan, Model: "Adreno 750", VRAMMB: 8192}
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				benchmarkListingBytes = listing.CanonicalBytes()
+			}
+		})
 	}
 }
