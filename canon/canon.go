@@ -22,6 +22,7 @@ import (
 	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
+	"slices"
 	"time"
 )
 
@@ -75,16 +76,23 @@ func (buf *Buffer) Count(n int) *Buffer {
 	return buf
 }
 
+func (buf *Buffer) appendFieldLength(n int) {
+	var prefix [binary.MaxVarintLen64]byte
+	size := binary.PutUvarint(prefix[:], uint64(n))
+	// Grow once for both the prefix and its payload.
+	buf.b = append(slices.Grow(buf.b, size+n), prefix[:size]...)
+}
+
 // String appends a length-prefixed UTF-8 string.
 func (buf *Buffer) String(s string) *Buffer {
-	buf.Count(len(s))
+	buf.appendFieldLength(len(s))
 	buf.b = append(buf.b, s...)
 	return buf
 }
 
 // Bytes appends a length-prefixed byte slice.
 func (buf *Buffer) Bytes(p []byte) *Buffer {
-	buf.Count(len(p))
+	buf.appendFieldLength(len(p))
 	buf.b = append(buf.b, p...)
 	return buf
 }
